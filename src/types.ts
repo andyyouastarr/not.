@@ -29,6 +29,9 @@ export interface Preferences {
   opaque: boolean;
   lastEntry: string | null;
   recoveryConfirmed: boolean;
+  keyboardVisible?: boolean;
+  keyboardHeight?: number;
+  keyboardWidth?: number;
 }
 export type SaveEntry = Pick<
   Entry,

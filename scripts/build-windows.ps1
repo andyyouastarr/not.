@@ -31,6 +31,10 @@ switch($Mode) {
    cargo build --locked --offline --manifest-path src-tauri/Cargo.toml --features custom-protocol
  }
  'check' { cargo clippy --locked --offline --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings }
- 'bundle' { npm run tauri -- build -- --offline }
+ 'bundle' {
+   npm run tauri -- build -- --offline
+   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+   & (Join-Path $PSScriptRoot 'prepare-release.ps1')
+ }
 }
 exit $LASTEXITCODE

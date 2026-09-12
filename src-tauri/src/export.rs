@@ -23,6 +23,13 @@ fn render(v: &Value, vault: &Vault, assets: &Path) -> Result<String> {
                     "strike" => "s",
                     "underline" => "u",
                     "code" => "code",
+                    "highlight" => {
+                        let color = m["attrs"]["color"].as_str().unwrap_or("");
+                        let background =
+                            vault::highlight_color(color).ok_or("Неверный цвет маркера")?;
+                        s = format!("<mark data-highlight=\"{color}\" style=\"background-color:{background};color:inherit\">{s}</mark>");
+                        continue;
+                    }
                     "link" => {
                         let href = m["attrs"]["href"].as_str().unwrap_or("");
                         if vault::safe_link(href) {

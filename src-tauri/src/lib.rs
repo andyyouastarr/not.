@@ -1,5 +1,6 @@
 mod crypto;
 mod export;
+mod keyboard;
 mod session;
 mod vault;
 use crypto::Result;
@@ -275,10 +276,26 @@ fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Valu
         Request::Settings => v.settings(),
         Request::SetSettings { value } => {
             let object = value.as_object().ok_or("Неверные настройки")?;
-            if object
-                .keys()
-                .any(|k| !["opaque", "lastEntry", "recoveryConfirmed"].contains(&k.as_str()))
-                || !value["opaque"].is_boolean()
+            if object.keys().any(|k| {
+                ![
+                    "opaque",
+                    "lastEntry",
+                    "recoveryConfirmed",
+                    "keyboardVisible",
+                    "keyboardHeight",
+                    "keyboardWidth",
+                ]
+                .contains(&k.as_str())
+            }) || !value["opaque"].is_boolean()
+                || object
+                    .get("keyboardVisible")
+                    .is_some_and(|v| !v.is_boolean())
+                || object
+                    .get("keyboardHeight")
+                    .is_some_and(|v| !v.as_u64().is_some_and(|h| (170..=340).contains(&h)))
+                || object
+                    .get("keyboardWidth")
+                    .is_some_and(|v| !v.as_u64().is_some_and(|w| (440..=1200).contains(&w)))
             {
                 return Err("Неверные настройки".into());
             }
@@ -420,7 +437,7 @@ pub fn run() {
                 let _ = window.emit("close-request", ());
             }
         })
-        .invoke_handler(tauri::generate_handler![dispatch])
+        .invoke_handler(tauri::generate_handler![dispatch, keyboard::keyboard_state])
         .run(context)
         .expect("Не удалось запустить not. studio");
 }

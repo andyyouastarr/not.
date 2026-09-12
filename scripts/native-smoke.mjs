@@ -1,6 +1,7 @@
 import { chromium } from "playwright";
 import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import assert from "node:assert/strict";
@@ -9,6 +10,8 @@ const profile = path.join(root, "artifacts", `native-test-${Date.now()}`);
 await mkdir(profile, { recursive: true });
 const exe = path.join(root, "src-tauri/target/debug/not-studio.exe");
 const imageFixture = process.env.NOT_STUDIO_TEST_ATTACHMENT;
+const keyboardTest = process.env.NOT_STUDIO_TEST_KEYBOARD === "1";
+const keyboardTimings = [];
 let expectedTitle = "Проверка нативного дневника";
 let savedImageWidth;
 let child,
@@ -237,6 +240,108 @@ try {
       .waitFor();
     await page.screenshot({ path: "artifacts/native-image-layout.png" });
   }
+  if (keyboardTest) {
+    const editor = page.getByRole("textbox", { name: "Текст записи" });
+    await editor.press("Control+End");
+    await page
+      .getByRole("button", { name: "Клавиатура-подсказка", exact: true })
+      .click();
+    assert(await editor.evaluate((e) => e === document.activeElement));
+    await page.evaluate(() => {
+      window.__keyboardChanges = [];
+      new MutationObserver(() =>
+        window.__keyboardChanges.push({
+          label: document.querySelector(".keyboard-layout").textContent,
+          at: Date.now(),
+        }),
+      ).observe(document.querySelector(".keyboard-layout"), {
+        childList: true,
+        characterData: true,
+        subtree: true,
+      });
+    });
+    for (const [id, label] of [
+      ["04090409", "ENG · US"],
+      ["04190419", "РУС"],
+      ["04090409", "ENG · US"],
+      ["04190419", "РУС"],
+    ]) {
+      const { stdout } = await promisify(execFile)(
+        "python",
+        ["scripts/keyboard-native.py", String(child.pid), id],
+        { windowsHide: true },
+      );
+      const requested = JSON.parse(stdout);
+      await page.waitForFunction(
+        (text) =>
+          document.querySelector(".keyboard-layout")?.textContent === text,
+        label,
+      );
+      const changes = await page.evaluate(() => window.__keyboardChanges);
+      const observed = changes.findLast(
+        (change) =>
+          change.label === label && change.at >= requested.requestedAt,
+      );
+      if (observed) keyboardTimings.push(observed.at - requested.requestedAt);
+      await page.screenshot({ path: `artifacts/native-keyboard-${id}.png` });
+    }
+    assert(keyboardTimings.length >= 3);
+    assert(
+      Math.max(...keyboardTimings) < 350,
+      "Layout updates should remain responsive",
+    );
+    const resize = page.getByRole("separator", { name: "Высота клавиатуры" });
+    await resize.focus();
+    await resize.press("ArrowUp");
+    await page.waitForFunction(
+      async () =>
+        (
+          await window.__TAURI_INTERNALS__.invoke("dispatch", {
+            request: { type: "settings" },
+          })
+        ).keyboardHeight === 240,
+    );
+    const width = page.getByRole("separator", { name: "Ширина клавиатуры" });
+    await width.focus();
+    await width.press("Home");
+    await width.press("ArrowRight");
+    await page.waitForFunction(
+      async () =>
+        (
+          await window.__TAURI_INTERNALS__.invoke("dispatch", {
+            request: { type: "settings" },
+          })
+        ).keyboardWidth === 460,
+    );
+    await editor.locator("p").first().click();
+    // Set an exact DOM selection independent of platform shortcut handling
+    // after the test switches Windows input layouts.
+    await editor
+      .locator("p")
+      .first()
+      .evaluate((paragraph) => {
+        const range = document.createRange();
+        range.setStart(paragraph.firstChild, 0);
+        range.setEnd(paragraph.firstChild, 6);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        document.dispatchEvent(new Event("selectionchange"));
+      });
+    assert.equal(
+      (await page.evaluate(() => window.getSelection()?.toString()))?.length,
+      6,
+    );
+    await page
+      .getByRole("button", { name: "Маркер текста", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Зелёный маркер" }).click();
+    await page.locator('.tiptap mark[data-highlight="green"]').waitFor();
+    await page
+      .getByRole("button", { name: "Сохранено", exact: true })
+      .waitFor();
+    await page.screenshot({ path: "artifacts/native-keyboard-highlight.png" });
+  }
   await page.screenshot({ path: "artifacts/native-journal.png" });
   await stop();
   await browser.close();
@@ -260,6 +365,25 @@ try {
     await page.getByRole("textbox", { name: "Текст записи" }).innerText(),
     /КонтрольныйЗакрытыйТекст/,
   );
+  if (keyboardTest) {
+    assert.equal(
+      await page
+        .getByRole("separator", { name: "Высота клавиатуры" })
+        .getAttribute("aria-valuenow"),
+      "240",
+    );
+    assert.equal(await page.locator(".keyboard-guide").count(), 1);
+    assert.equal(
+      await page
+        .getByRole("separator", { name: "Ширина клавиатуры" })
+        .getAttribute("aria-valuenow"),
+      "460",
+    );
+    assert.equal(
+      await page.locator('.tiptap mark[data-highlight="green"]').count(),
+      1,
+    );
+  }
   if (imageFixture) {
     const img = page.locator(".node-image img");
     await img.waitFor();
@@ -282,6 +406,7 @@ try {
     .click();
   await page.getByRole("heading", { name: "С возвращением." }).waitFor();
   assert.equal(await page.locator(".tiptap").count(), 0);
+  assert.equal(await page.locator(".keyboard-guide").count(), 0);
   const bytes = await readFile(path.join(profile, "vault/journal.db"));
   assert.equal(bytes.includes(Buffer.from("КонтрольныйЗакрытыйТекст")), false);
   assert.deepEqual(errors, []);
@@ -290,6 +415,7 @@ try {
     JSON.stringify(
       {
         passed: true,
+        keyboardTimings,
         imageFixture: imageFixture ? path.basename(imageFixture) : null,
         testedAt: new Date().toISOString(),
         frontendUrl: page.url(),

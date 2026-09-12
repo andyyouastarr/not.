@@ -162,6 +162,15 @@ fn has_structure(node: &Value) -> bool {
             .as_array()
             .is_some_and(|c| c.iter().any(has_structure))
 }
+pub fn highlight_color(name: &str) -> Option<&'static str> {
+    match name {
+        "lavender" => Some("#e3d9f7"),
+        "yellow" => Some("#f3e5ae"),
+        "green" => Some("#cce9d9"),
+        "pink" => Some("#f0d3e0"),
+        _ => None,
+    }
+}
 pub fn validate_document(doc: &Value) -> Result<Vec<String>> {
     fn walk(v: &Value, depth: usize, ids: &mut Vec<String>, count: &mut usize) -> Result<()> {
         *count += 1;
@@ -228,8 +237,23 @@ pub fn validate_document(doc: &Value) -> Result<Vec<String>> {
         if let Some(marks) = v.get("marks").and_then(Value::as_array) {
             for m in marks {
                 let t = m.get("type").and_then(Value::as_str).unwrap_or("");
-                if !["bold", "italic", "strike", "code", "underline", "link"].contains(&t) {
+                if ![
+                    "bold",
+                    "italic",
+                    "strike",
+                    "code",
+                    "underline",
+                    "link",
+                    "highlight",
+                ]
+                .contains(&t)
+                {
                     return Err("Неизвестное форматирование".into());
+                }
+                if t == "highlight"
+                    && highlight_color(m["attrs"]["color"].as_str().unwrap_or("")).is_none()
+                {
+                    return Err("Неверный цвет маркера".into());
                 }
                 if t == "link" {
                     let href = m
@@ -995,5 +1019,47 @@ mod tests {
             fs::read_to_string(out.join("assets").join(format!("{}.bin", a.id))).unwrap(),
             "Приложенный текст 🎈"
         );
+    }
+
+    #[test]
+    fn highlight_roundtrip_backup_export_and_invalid_color() {
+        crypto::init().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let (mut v, recovery) =
+            Vault::create(&dir.path().join("vault"), "highlight test password").unwrap();
+        for color in ["lavender", "yellow", "green", "pink"] {
+            let mut input = entry("Важная мысль 🎈");
+            input.document["content"][0]["content"][0]["marks"] = serde_json::json!([
+                {"type":"bold"}, {"type":"highlight","attrs":{"color":color}}
+            ]);
+            let saved = v.save(input).unwrap();
+            assert_eq!(v.get(&saved.id).unwrap().document, saved.document);
+            let archive = dir.path().join(format!("{color}.notbackup"));
+            v.backup(&archive).unwrap();
+            let restored = Vault::restore(
+                &archive,
+                &dir.path().join(format!("restored-{color}")),
+                &recovery,
+                true,
+            )
+            .unwrap();
+            let output =
+                PathBuf::from(crate::export::export(&restored, &saved.id, dir.path()).unwrap());
+            let html = fs::read_to_string(output.join("index.html")).unwrap();
+            assert!(html.contains(&format!("data-highlight=\"{color}\"")));
+            assert!(html.contains("<strong>Важная мысль 🎈</strong>"));
+        }
+        for color in [
+            "red",
+            "url(https://example.com)",
+            "\" onmouseover=\"alert(1)",
+            "",
+        ] {
+            let mut input = entry("Invalid marker");
+            input.document["content"][0]["content"][0]["marks"] = serde_json::json!([
+                {"type":"highlight","attrs":{"color":color}}
+            ]);
+            assert!(v.save(input).is_err());
+        }
     }
 }

@@ -26,6 +26,7 @@ import {
   Upload,
   Ellipsis,
   CloudOff,
+  Keyboard,
 } from "lucide-react";
 import type { Entry, Preferences, Summary } from "./types";
 import { api, demo, native, errorText, localDate } from "./api";
@@ -34,6 +35,7 @@ import JournalEditor, { hasContent, wordCount } from "./Editor";
 import { SaveQueue } from "./saveQueue";
 import type { SaveState } from "./saveQueue";
 import EntryList from "./EntryList";
+import KeyboardGuide from "./KeyboardGuide";
 
 function IconButton({
   title,
@@ -61,12 +63,19 @@ function Modal({
   title,
   onClose,
   children,
+  dismissOutside = false,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  dismissOutside?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const pressedOutside = useRef(false);
+  const outside = (dialog: HTMLDialogElement, x: number, y: number) => {
+    const box = dialog.getBoundingClientRect();
+    return x < box.left || x > box.right || y < box.top || y > box.bottom;
+  };
   useEffect(() => {
     const d = ref.current;
     d?.showModal();
@@ -76,6 +85,25 @@ function Modal({
     <dialog
       ref={ref}
       className="modal glass"
+      onPointerDown={(e) => {
+        pressedOutside.current =
+          dismissOutside &&
+          e.button === 0 &&
+          e.target === e.currentTarget &&
+          outside(e.currentTarget, e.clientX, e.clientY);
+      }}
+      onPointerCancel={() => {
+        pressedOutside.current = false;
+      }}
+      onClick={(e) => {
+        if (
+          pressedOutside.current &&
+          e.target === e.currentTarget &&
+          outside(e.currentTarget, e.clientX, e.clientY)
+        )
+          onClose();
+        pressedOutside.current = false;
+      }}
       onCancel={(e) => {
         e.preventDefault();
         onClose();
@@ -153,6 +181,20 @@ export default function App() {
   prefsRef.current = prefs;
   stageRef.current = stage;
   listArgs.current = { query, filter, date };
+  const updateKeyboard = (
+    patch: Pick<
+      Preferences,
+      "keyboardVisible" | "keyboardHeight" | "keyboardWidth"
+    >,
+  ) => {
+    const value = { ...prefsRef.current, ...patch };
+    prefsRef.current = value;
+    setPrefs(value);
+    const currentEpoch = epoch.current;
+    void api("setSettings", { value }).catch((e) => {
+      if (epoch.current === currentEpoch) setError(errorText(e));
+    });
+  };
   const refresh = useCallback(async () => {
     const ticket = ++requestId.current;
     const result = await api("list", { ...listArgs.current, offset: 0 });
@@ -791,6 +833,19 @@ export default function App() {
                     </IconButton>
                   </>
                 )}
+                <button
+                  className={`icon-button ${prefs.keyboardVisible ? "active" : ""}`}
+                  title={ru.keyboardGuide}
+                  aria-label={ru.keyboardGuide}
+                  aria-expanded={!!prefs.keyboardVisible}
+                  aria-controls="keyboard-guide"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() =>
+                    updateKeyboard({ keyboardVisible: !prefs.keyboardVisible })
+                  }
+                >
+                  <Keyboard size={18} />
+                </button>
                 <IconButton
                   title={focus ? ru.exitFocus : ru.focus}
                   onClick={() => setFocus(!focus)}
@@ -886,6 +941,17 @@ export default function App() {
                 )}
               </div>
             )}
+            {prefs.keyboardVisible && (
+              <KeyboardGuide
+                height={prefs.keyboardHeight ?? 230}
+                width={prefs.keyboardWidth ?? 760}
+                onWidth={(keyboardWidth) => updateKeyboard({ keyboardWidth })}
+                onHeight={(keyboardHeight) =>
+                  updateKeyboard({ keyboardHeight })
+                }
+                onClose={() => updateKeyboard({ keyboardVisible: false })}
+              />
+            )}
             <footer className="journal-footer">
               <span>
                 <Lock size={12} />
@@ -946,7 +1012,11 @@ export default function App() {
         </div>
       )}
       {modal === "settings" && (
-        <Modal title={ru.settings} onClose={() => setModal(null)}>
+        <Modal
+          title={ru.settings}
+          onClose={() => setModal(null)}
+          dismissOutside
+        >
           <div className="settings-section">
             <h3>{ru.appearance}</h3>
             <label className="setting-row">
@@ -1013,7 +1083,7 @@ export default function App() {
               <ChevronRight size={16} />
             </button>
           </div>
-          <p className="version">not. studio · 0.1.1</p>
+          <p className="version">not. studio · 0.1.3</p>
         </Modal>
       )}
       {modal === "restore" && (

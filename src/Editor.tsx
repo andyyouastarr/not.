@@ -37,6 +37,7 @@ import { api, errorText } from "./api";
 import { ru } from "./ru";
 import type { Attachment } from "./types";
 import AttachmentView from "./AttachmentView";
+import { HighlightMark, HighlightTools } from "./Highlight";
 
 function imageDropTarget(view: EditorView, x: number, y: number) {
   const coords = view.posAtCoords({ left: x, top: y });
@@ -191,6 +192,7 @@ export default function JournalEditor({
         },
       }),
       TaskList,
+      HighlightMark,
       TaskItem.configure({ nested: true }),
       TableKit.configure({ table: { resizable: true } }),
       Placeholder.configure({ placeholder: ru.bodyPlaceholder }),
@@ -522,6 +524,7 @@ export default function JournalEditor({
             >
               <Strikethrough size={16} />
             </button>
+            <HighlightTools editor={editor} />
             <button
               title={ru.link}
               aria-label={ru.link}
