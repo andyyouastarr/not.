@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Local journal window only",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
