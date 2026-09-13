@@ -295,7 +295,7 @@ fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Valu
                     .is_some_and(|v| !v.as_u64().is_some_and(|h| (170..=340).contains(&h)))
                 || object
                     .get("keyboardWidth")
-                    .is_some_and(|v| !v.as_u64().is_some_and(|w| (440..=1200).contains(&w)))
+                    .is_some_and(|v| !v.as_u64().is_some_and(|w| (300..=1200).contains(&w)))
             {
                 return Err("Неверные настройки".into());
             }

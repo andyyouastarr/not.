@@ -299,7 +299,7 @@ try {
           await window.__TAURI_INTERNALS__.invoke("dispatch", {
             request: { type: "settings" },
           })
-        ).keyboardHeight === 240,
+        ).keyboardHeight === 200,
     );
     const width = page.getByRole("separator", { name: "Ширина клавиатуры" });
     await width.focus();
@@ -311,7 +311,7 @@ try {
           await window.__TAURI_INTERNALS__.invoke("dispatch", {
             request: { type: "settings" },
           })
-        ).keyboardWidth === 460,
+        ).keyboardWidth === 320,
     );
     await editor.locator("p").first().click();
     // Set an exact DOM selection independent of platform shortcut handling
@@ -370,14 +370,14 @@ try {
       await page
         .getByRole("separator", { name: "Высота клавиатуры" })
         .getAttribute("aria-valuenow"),
-      "240",
+      "200",
     );
     assert.equal(await page.locator(".keyboard-guide").count(), 1);
     assert.equal(
       await page
         .getByRole("separator", { name: "Ширина клавиатуры" })
         .getAttribute("aria-valuenow"),
-      "460",
+      "320",
     );
     assert.equal(
       await page.locator('.tiptap mark[data-highlight="green"]').count(),

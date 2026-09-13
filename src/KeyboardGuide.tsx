@@ -40,6 +40,10 @@ export default function KeyboardGuide({
   useEffect(() => setLiveHeight(height), [height]);
   useEffect(() => setLiveWidth(width), [width]);
   useEffect(() => {
+    const workspace = panel.current?.closest<HTMLElement>(".workspace");
+    workspace?.style.setProperty("--keyboard-dock-width", `${liveWidth}px`);
+  }, [liveWidth]);
+  useEffect(() => {
     const keepCaretVisible = () => {
       const selection = window.getSelection();
       const scroll = document.querySelector(".document-scroll");
@@ -135,16 +139,7 @@ export default function KeyboardGuide({
   };
   const layout = state?.layout;
   const clampWidth = (value: number) =>
-    Math.round(
-      Math.max(
-        440,
-        Math.min(
-          1200,
-          (panel.current?.parentElement?.clientWidth ?? 1232) - 32,
-          value,
-        ),
-      ),
-    );
+    Math.round(Math.max(300, Math.min(520, window.innerWidth * 0.45, value)));
   const finishWidth = () => {
     if (!widthDrag.current) return;
     const latest = widthDrag.current.latest;
@@ -173,8 +168,8 @@ export default function KeyboardGuide({
           aria-hidden={direction === -1 ? true : undefined}
           aria-label={direction === 1 ? ru.keyboardWidth : undefined}
           aria-orientation={direction === 1 ? "vertical" : undefined}
-          aria-valuemin={direction === 1 ? 440 : undefined}
-          aria-valuemax={direction === 1 ? 1200 : undefined}
+          aria-valuemin={direction === 1 ? 300 : undefined}
+          aria-valuemax={direction === 1 ? 520 : undefined}
           aria-valuenow={direction === 1 ? liveWidth : undefined}
           title={ru.keyboardWidthHint}
           onPointerDown={(e) => {
@@ -210,9 +205,9 @@ export default function KeyboardGuide({
             const actualWidth = panel.current!.getBoundingClientRect().width;
             const next = clampWidth(
               e.key === "Home"
-                ? 440
+                ? 300
                 : e.key === "End"
-                  ? 1200
+                  ? 520
                   : actualWidth + (e.key === "ArrowRight" ? 20 : -20),
             );
             setLiveWidth(next);

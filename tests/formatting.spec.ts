@@ -30,19 +30,24 @@ test("four highlight colors preserve selection, undo and saved formatting", asyn
 }) => {
   await page.goto("/?demo=1");
   const editor = page.getByRole("textbox", { name: "Текст записи" });
+  // Exercise palette hit testing above a stacked editable surface.
+  await page.addStyleTag({
+    content: ".tiptap { position: relative; z-index: 1; }",
+  });
   await editor.fill("Важная мысль и обычный текст");
-  await editor.press("Control+Home");
-  await page.keyboard.down("Shift");
-  for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowRight");
-  await page.keyboard.up("Shift");
+  await expect(
+    page.getByRole("button", { name: "Сохранено", exact: true }),
+  ).toBeVisible();
+  await editor.click();
+  await editor.press("Home");
+  await expect(editor).toBeFocused();
+  for (let i = 0; i < 6; i++) await editor.press("Shift+ArrowRight");
+  await expect
+    .poll(() => page.evaluate(() => window.getSelection()?.toString()))
+    .toBe("Важная");
   const marker = page.getByRole("button", {
     name: "Маркер текста",
     exact: true,
-  });
-  // Exercise palette hit testing above a stacked editable surface.
-  await editor.evaluate((element) => {
-    element.style.position = "relative";
-    element.style.zIndex = "1";
   });
   for (const [color, name] of [
     ["lavender", "Лавандовый"],
@@ -89,7 +94,7 @@ test("four highlight colors preserve selection, undo and saved formatting", asyn
     .click();
   await expect(editor.locator("mark")).toHaveText("Важная");
   await expect(editor).toHaveText("Важная мысль и обычный текст");
-  await editor.press("Control+Home");
+  await editor.press("Home");
   await editor.press("Control+Shift+ArrowRight");
   await marker.click();
   await page.screenshot({ path: "artifacts/highlight-palette.png" });

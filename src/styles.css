@@ -879,11 +879,13 @@ kbd {
   display: flex;
   align-items: center;
   gap: 3px;
-  position: relative;
+  position: sticky;
+  top: 0;
+  background: var(--page);
   padding: 7px 0;
   margin-bottom: 20px;
   border-bottom: 1px solid var(--line);
-  opacity: 0.65;
+  opacity: 1;
   transition: opacity var(--motion);
   flex-wrap: wrap;
 }
@@ -1293,7 +1295,7 @@ kbd {
   padding-top: 70px;
 }
 .focus-mode .editor-tools {
-  opacity: 0.3;
+  opacity: 1;
 }
 .focus-mode .editor-tools:hover,
 .focus-mode .editor-tools:focus-within {
@@ -1962,4 +1964,75 @@ kbd {
   border-radius: 8px;
   background: #b4a7dd15;
   z-index: 20;
+}
+
+/* A shared left rail keeps the keyboard outside the writing viewport. */
+.entry-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.entry-column > .entry-list {
+  flex: 1;
+  min-height: 0;
+}
+.focus-mode:not(.keyboard-docked) .entry-column {
+  display: none;
+}
+.workspace.keyboard-docked {
+  grid-template-columns: 216px calc(
+      min(var(--keyboard-dock-width), 45vw) + 16px
+    ) minmax(0, 1fr);
+}
+.workspace.keyboard-docked.nav-collapsed,
+.workspace.keyboard-docked.focus-mode {
+  grid-template-columns: calc(
+      min(var(--keyboard-dock-width), 45vw) + 16px
+    ) minmax(0, 1fr);
+}
+.keyboard-docked .keyboard-guide {
+  width: calc(100% - 16px);
+  margin: 8px;
+  padding: 0 10px 10px;
+  --key-gap: 3px;
+}
+.keyboard-docked.focus-mode .entry-column {
+  justify-content: center;
+  border-right: 1px solid var(--line);
+}
+.keyboard-docked .document {
+  padding-inline: clamp(20px, 3vw, 48px);
+}
+.keyboard-docked .guide-key.zone-0 {
+  font-size: clamp(7px, 2.2cqw, 10px);
+}
+.keyboard-docked .guide-key small {
+  font-size: 8px;
+  top: 2px;
+  right: 2px;
+}
+.keyboard-docked .keyboard-heading {
+  gap: 6px;
+  font-size: 10px;
+}
+.keyboard-docked .keyboard-resize {
+  flex-basis: 10px;
+  height: 10px;
+}
+.keyboard-docked .keyboard-heading {
+  flex-basis: 24px;
+}
+.document-scroll {
+  scroll-padding-top: 90px;
+}
+@media (max-width: 1100px) {
+  .workspace.keyboard-docked {
+    grid-template-columns: calc(
+        min(var(--keyboard-dock-width), 45vw) + 16px
+      ) minmax(0, 1fr);
+  }
+  .keyboard-docked .sidebar {
+    display: none;
+  }
 }

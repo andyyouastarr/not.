@@ -620,7 +620,12 @@ export default function App() {
         </div>
       ) : (
         <div
-          className={`workspace ${!sidebar ? "nav-collapsed" : ""} ${focus ? "focus-mode" : ""}`}
+          className={`workspace ${!sidebar ? "nav-collapsed" : ""} ${focus ? "focus-mode" : ""} ${prefs.keyboardVisible ? "keyboard-docked" : ""}`}
+          style={
+            {
+              "--keyboard-dock-width": `${Math.min(prefs.keyboardWidth ?? 360, 520)}px`,
+            } as import("react").CSSProperties
+          }
         >
           <aside className="sidebar glass">
             <div className="brand-row">
@@ -683,98 +688,111 @@ export default function App() {
               </div>
             </div>
           </aside>
-          <section className="entry-list">
-            <header>
-              <div>
-                {!sidebar && (
-                  <IconButton
-                    title={ru.expand}
-                    onClick={() => setSidebar(true)}
-                  >
-                    <PanelLeftOpen size={17} />
+          <div className="entry-column">
+            <section className="entry-list">
+              <header>
+                <div>
+                  {!sidebar && (
+                    <IconButton
+                      title={ru.expand}
+                      onClick={() => setSidebar(true)}
+                    >
+                      <PanelLeftOpen size={17} />
+                    </IconButton>
+                  )}
+                  <h1>{ru.journal}</h1>
+                </div>
+                <IconButton
+                  title={ru.newEntry}
+                  onClick={() => void createEntry()}
+                >
+                  <Plus size={19} />
+                </IconButton>
+              </header>
+              <div className="compact-nav">
+                <select
+                  aria-label="Раздел дневника"
+                  value={filter}
+                  onChange={(e) => {
+                    setFilter(e.target.value);
+                    setQuery("");
+                    setDate("");
+                  }}
+                >
+                  <option value="all">{ru.all}</option>
+                  <option value="favorites">{ru.favorites}</option>
+                  <option value="trash">{ru.trash}</option>
+                </select>
+                <IconButton title={ru.lock} onClick={() => void lock()}>
+                  <Lock size={15} />
+                </IconButton>
+              </div>
+              <div className="search-box">
+                <Search size={16} />
+                <input
+                  id="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={ru.search}
+                  aria-label={ru.search}
+                />
+                <kbd>Ctrl K</kbd>
+              </div>
+              <div className="list-filter">
+                <span>{date ? dateLabel(date) : groupTitle}</span>
+                <label className="calendar-button" title={ru.calendar}>
+                  <CalendarDays size={16} />
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    aria-label={ru.calendar}
+                  />
+                </label>
+                {date && (
+                  <IconButton title={ru.clearDate} onClick={() => setDate("")}>
+                    <X size={13} />
                   </IconButton>
                 )}
-                <h1>{ru.journal}</h1>
               </div>
-              <IconButton
-                title={ru.newEntry}
-                onClick={() => void createEntry()}
-              >
-                <Plus size={19} />
-              </IconButton>
-            </header>
-            <div className="compact-nav">
-              <select
-                aria-label="Раздел дневника"
-                value={filter}
-                onChange={(e) => {
-                  setFilter(e.target.value);
-                  setQuery("");
-                  setDate("");
-                }}
-              >
-                <option value="all">{ru.all}</option>
-                <option value="favorites">{ru.favorites}</option>
-                <option value="trash">{ru.trash}</option>
-              </select>
-              <IconButton title={ru.lock} onClick={() => void lock()}>
-                <Lock size={15} />
-              </IconButton>
-            </div>
-            <div className="search-box">
-              <Search size={16} />
-              <input
-                id="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={ru.search}
-                aria-label={ru.search}
+              <EntryList
+                rows={rows}
+                currentId={entry?.id}
+                onSelect={(id) => void navigate(id)}
+                more={more}
+                onMore={() => void task(loadMore)}
+                scope={`${filter}/${query}/${date}`}
+                empty={
+                  query
+                    ? ru.emptySearch
+                    : filter === "trash"
+                      ? ru.emptyTrash
+                      : filter === "favorites"
+                        ? ru.emptyFavorites
+                        : "Пока нет записей"
+                }
               />
-              <kbd>Ctrl K</kbd>
-            </div>
-            <div className="list-filter">
-              <span>{date ? dateLabel(date) : groupTitle}</span>
-              <label className="calendar-button" title={ru.calendar}>
-                <CalendarDays size={16} />
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  aria-label={ru.calendar}
-                />
-              </label>
-              {date && (
-                <IconButton title={ru.clearDate} onClick={() => setDate("")}>
-                  <X size={13} />
-                </IconButton>
-              )}
-            </div>
-            <EntryList
-              rows={rows}
-              currentId={entry?.id}
-              onSelect={(id) => void navigate(id)}
-              more={more}
-              onMore={() => void task(loadMore)}
-              scope={`${filter}/${query}/${date}`}
-              empty={
-                query
-                  ? ru.emptySearch
-                  : filter === "trash"
-                    ? ru.emptyTrash
-                    : filter === "favorites"
-                      ? ru.emptyFavorites
-                      : "Пока нет записей"
-              }
-            />
-            <footer className="list-footer">
-              <ShieldCheck size={13} />
-              {ru.encrypted}
-              <span>
-                {rows.length}
-                {more ? "+" : ""}
-              </span>
-            </footer>
-          </section>
+              <footer className="list-footer">
+                <ShieldCheck size={13} />
+                {ru.encrypted}
+                <span>
+                  {rows.length}
+                  {more ? "+" : ""}
+                </span>
+              </footer>
+            </section>
+            {prefs.keyboardVisible && (
+              <KeyboardGuide
+                height={prefs.keyboardHeight ?? 190}
+                width={Math.min(prefs.keyboardWidth ?? 360, 520)}
+                onWidth={(keyboardWidth) => updateKeyboard({ keyboardWidth })}
+                onHeight={(keyboardHeight) =>
+                  updateKeyboard({ keyboardHeight })
+                }
+                onClose={() => updateKeyboard({ keyboardVisible: false })}
+              />
+            )}
+          </div>
           <main className="journal-main">
             <header className="journal-top">
               <div className="breadcrumb">
@@ -941,17 +959,6 @@ export default function App() {
                 )}
               </div>
             )}
-            {prefs.keyboardVisible && (
-              <KeyboardGuide
-                height={prefs.keyboardHeight ?? 230}
-                width={prefs.keyboardWidth ?? 760}
-                onWidth={(keyboardWidth) => updateKeyboard({ keyboardWidth })}
-                onHeight={(keyboardHeight) =>
-                  updateKeyboard({ keyboardHeight })
-                }
-                onClose={() => updateKeyboard({ keyboardVisible: false })}
-              />
-            )}
             <footer className="journal-footer">
               <span>
                 <Lock size={12} />
@@ -1083,7 +1090,7 @@ export default function App() {
               <ChevronRight size={16} />
             </button>
           </div>
-          <p className="version">not. studio · 0.1.3</p>
+          <p className="version">not. studio · 0.1.4</p>
         </Modal>
       )}
       {modal === "restore" && (
