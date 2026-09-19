@@ -66,4 +66,5 @@ export interface Commands {
   dailyBackup: [{}, boolean];
   restore: [{ credential: string; recovery: boolean }, boolean | null];
   export: [{ id: string }, string | null];
+  openLink: [{ url: string }, boolean];
 }

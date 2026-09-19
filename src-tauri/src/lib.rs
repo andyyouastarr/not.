@@ -1,6 +1,7 @@
 mod crypto;
 mod export;
 mod keyboard;
+mod links;
 mod session;
 mod vault;
 use crypto::Result;
@@ -80,6 +81,9 @@ enum Request {
         id: String,
     },
     Close,
+    OpenLink {
+        url: String,
+    },
 }
 fn pick_path(p: tauri_plugin_dialog::FilePath) -> Result<PathBuf> {
     p.into_path()
@@ -97,6 +101,18 @@ async fn dispatch(
         .map_err(|_| "Операция прервана")?
 }
 fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Value> {
+    if let Request::OpenLink { url } = &request {
+        if state
+            .lock()
+            .map_err(|_| "Хранилище недоступно")?
+            .vault
+            .is_none()
+        {
+            return Err("Дневник заблокирован".into());
+        }
+        links::open(&app, url)?;
+        return Ok(json!(true));
+    }
     // Native dialogs are opened outside the vault mutex: system lock must remain responsive.
     let selected = match &request {
         Request::AddAttachment => {

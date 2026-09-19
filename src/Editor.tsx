@@ -38,6 +38,7 @@ import { ru } from "./ru";
 import type { Attachment } from "./types";
 import AttachmentView from "./AttachmentView";
 import { HighlightMark, HighlightTools } from "./Highlight";
+import { externalUrl, openLink } from "./links";
 
 function imageDropTarget(view: EditorView, x: number, y: number) {
   const coords = view.posAtCoords({ left: x, top: y });
@@ -186,6 +187,12 @@ export default function JournalEditor({
         heading: { levels: [1, 2, 3] },
         link: {
           openOnClick: false,
+          HTMLAttributes: {
+            target: "_blank",
+            rel: "noopener noreferrer",
+            tabindex: "0",
+            title: ru.openLink,
+          },
           autolink: false,
           defaultProtocol: "https",
           protocols: ["http", "https", "mailto"],
@@ -193,7 +200,15 @@ export default function JournalEditor({
       }),
       TaskList,
       HighlightMark,
-      TaskItem.configure({ nested: true }),
+      TaskItem.configure({
+        nested: true,
+        // The interactive node view needs this attribute too, not only HTML export.
+        HTMLAttributes: { "data-type": "taskItem" },
+        a11y: {
+          checkboxLabel: (node) =>
+            `${ru.checklistItem}: ${node.firstChild?.textContent || ru.checklistEmptyItem}`,
+        },
+      }),
       TableKit.configure({ table: { resizable: true } }),
       Placeholder.configure({ placeholder: ru.bodyPlaceholder }),
       attachmentNode("image"),
@@ -205,6 +220,32 @@ export default function JournalEditor({
     onSelectionUpdate: () => redraw((n) => n + 1),
     editorProps: {
       handleDOMEvents: {
+        click: (view, event) => {
+          const anchor = (event.target as Element).closest?.("a[href]");
+          if (!anchor || !view.dom.contains(anchor) || event.button !== 0)
+            return false;
+          event.preventDefault();
+          // A drag selection is for editing, not a request to follow the link.
+          if (view.dom.ownerDocument.getSelection()?.isCollapsed !== false)
+            void openLink(anchor.getAttribute("href")!).catch((e) =>
+              onError(errorText(e)),
+            );
+          return true;
+        },
+        keydown: (view, event) => {
+          const anchor = event.target as HTMLElement;
+          if (
+            event.key !== "Enter" ||
+            !anchor.matches("a[href]") ||
+            !view.dom.contains(anchor)
+          )
+            return false;
+          event.preventDefault();
+          void openLink(anchor.getAttribute("href")!).catch((e) =>
+            onError(errorText(e)),
+          );
+          return true;
+        },
         dragover: (view, event) => {
           if (
             !view.editable ||
@@ -501,6 +542,17 @@ export default function JournalEditor({
           <span className="tool-separator" />
           <div className="tool-group">
             <button
+              className={editor.isActive("taskList") ? "active" : ""}
+              title={ru.checklist}
+              aria-label={ru.checklist}
+              aria-pressed={editor.isActive("taskList")}
+              onClick={() =>
+                run((e) => e.chain().focus().toggleTaskList().run())
+              }
+            >
+              <ListChecks size={17} />
+            </button>
+            <button
               className={editor.isActive("bold") ? "active" : ""}
               title={ru.bold}
               aria-label={ru.bold}
@@ -584,15 +636,18 @@ export default function JournalEditor({
               className="link-menu glass"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!/^(https?:\/\/|mailto:)/.test(link)) {
-                  onError("Введите ссылку https://, http:// или mailto:");
+                let href: string;
+                try {
+                  href = externalUrl(link);
+                } catch {
+                  onError(ru.invalidLink);
                   return;
                 }
                 editor
                   .chain()
                   .focus()
                   .extendMarkRange("link")
-                  .setLink({ href: link })
+                  .setLink({ href })
                   .run();
                 setLink(null);
               }}

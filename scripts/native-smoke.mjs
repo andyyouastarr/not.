@@ -1,5 +1,6 @@
 import { chromium } from "playwright";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createServer } from "node:http";
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -11,6 +12,8 @@ await mkdir(profile, { recursive: true });
 const exe = path.join(root, "src-tauri/target/debug/not-studio.exe");
 const imageFixture = process.env.NOT_STUDIO_TEST_ATTACHMENT;
 const keyboardTest = process.env.NOT_STUDIO_TEST_KEYBOARD === "1";
+const linkTest = process.env.NOT_STUDIO_TEST_LINK === "1";
+let linkServer, linkUrl, linkVisited, linkTimer;
 const keyboardTimings = [];
 let expectedTitle = "Проверка нативного дневника";
 let savedImageWidth;
@@ -73,6 +76,22 @@ async function stop() {
   }
 }
 try {
+  if (linkTest) {
+    const route = `/not-link-test-${randomUUID()}`;
+    let visited;
+    linkVisited = new Promise((resolve) => {
+      visited = resolve;
+    });
+    linkServer = createServer((req, res) => {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(
+        "<!doctype html><title>not. studio link test</title><p>Link opened successfully. This test tab can be closed.</p>",
+      );
+      if (req.url === route) visited(true);
+    });
+    await new Promise((resolve) => linkServer.listen(0, "127.0.0.1", resolve));
+    linkUrl = `http://127.0.0.1:${linkServer.address().port}${route}`;
+  }
   let { browser, page } = await launch();
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -100,6 +119,47 @@ try {
   await page
     .getByRole("textbox", { name: "Текст записи" })
     .fill("КонтрольныйЗакрытыйТекст 🎈 Сохранность после перезапуска.");
+  await page.getByRole("button", { name: "Сохранено", exact: true }).waitFor();
+  if (linkTest) {
+    await page
+      .locator(".tiptap > p")
+      .first()
+      .evaluate((p) => {
+        const range = document.createRange();
+        range.selectNodeContents(p);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        document.dispatchEvent(new Event("selectionchange"));
+      });
+    await page.getByRole("button", { name: "Ссылка", exact: true }).click();
+    await page
+      .getByRole("textbox", { name: "Ссылка", exact: true })
+      .fill(linkUrl);
+    await page
+      .locator(".link-menu")
+      .getByRole("button", { name: "Добавить", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Сохранено", exact: true })
+      .waitFor();
+  }
+  const checklistEditor = page.getByRole("textbox", { name: "Текст записи" });
+  await checklistEditor.click();
+  await checklistEditor.press("Control+End");
+  await checklistEditor.press("Enter");
+  await page.getByRole("button", { name: "Чек-лист", exact: true }).click();
+  await page.keyboard.insertText("Проверить чек-лист");
+  await page.keyboard.press("Enter");
+  await page.keyboard.insertText("Следующий пункт");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await checklistEditor
+    .getByRole("checkbox", {
+      name: "Пункт чек-листа: Проверить чек-лист",
+      exact: true,
+    })
+    .check();
   await page.getByRole("button", { name: "Сохранено", exact: true }).waitFor();
   await page
     .getByRole("button", { name: "Добавить блок", exact: true })
@@ -365,6 +425,60 @@ try {
     await page.getByRole("textbox", { name: "Текст записи" }).innerText(),
     /КонтрольныйЗакрытыйТекст/,
   );
+  if (!imageFixture) {
+    assert.equal(
+      await page
+        .getByRole("checkbox", {
+          name: "Пункт чек-листа: Проверить чек-лист",
+          exact: true,
+        })
+        .isChecked(),
+      true,
+    );
+    assert.equal(
+      await page
+        .getByRole("checkbox", {
+          name: "Пункт чек-листа: Следующий пункт",
+          exact: true,
+        })
+        .isChecked(),
+      false,
+    );
+  }
+  if (linkTest && !imageFixture) {
+    const diaryUrl = page.url();
+    await page.locator(".tiptap a").first().click();
+    await Promise.race([
+      linkVisited,
+      new Promise((_, reject) => {
+        linkTimer = setTimeout(
+          () => reject(Error("Default browser did not visit the test URL")),
+          20000,
+        );
+      }),
+    ]);
+    clearTimeout(linkTimer);
+    assert.equal(
+      page.url(),
+      diaryUrl,
+      "External navigation must not replace the diary",
+    );
+    assert.equal(
+      await page.locator(".tiptap a").first().getAttribute("href"),
+      linkUrl,
+    );
+    const blocked = await page.evaluate(async () => {
+      try {
+        await window.__TAURI_INTERNALS__.invoke("dispatch", {
+          request: { type: "openLink", url: "file:///C:/Windows/notepad.exe" },
+        });
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    assert.equal(blocked, true, "Native opener must reject file URLs");
+  }
   if (keyboardTest) {
     assert.equal(
       await page
@@ -425,6 +539,12 @@ try {
           deviceScaleFactor: devicePixelRatio,
         })),
         checks: [
+          ...(linkTest && !imageFixture
+            ? [
+                "saved link opened through Windows default handler and reached local HTTP server",
+                "file URL rejected by native opener",
+              ]
+            : []),
           "native create",
           "recovery confirmation",
           "block save",
@@ -433,7 +553,7 @@ try {
           "recovery unlock",
           imageFixture
             ? "image size and position persisted"
-            : "document and table persisted",
+            : "document, table and checklist flags persisted",
           ...(imageFixture
             ? [
                 "image SHA-256 matches original",
@@ -464,5 +584,10 @@ try {
   }
   throw error;
 } finally {
+  clearTimeout(linkTimer);
+  if (linkServer) {
+    linkServer.closeAllConnections();
+    linkServer.close();
+  }
   await stop();
 }
