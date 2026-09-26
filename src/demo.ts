@@ -70,6 +70,7 @@ let entries: Entry[] = [
     revision: 1,
   })),
 ];
+const pastedImages = new Map<string, string>();
 function text(v: Entry["document"]): string {
   return (v.text || "") + " " + (v.content || []).map(text).join(" ");
 }
@@ -145,7 +146,22 @@ export async function mock<K extends keyof Commands>(
       result = null;
       break;
     case "readAttachment":
+      if (pastedImages.has(String(a.id))) {
+        result = { data: pastedImages.get(String(a.id)), mime: "image/png" };
+        break;
+      }
       throw Error("Нет файла");
+    case "addPastedImage": {
+      const id = crypto.randomUUID();
+      pastedImages.set(id, String(a.data));
+      result = {
+        id,
+        name: "Вставленное изображение.png",
+        mime: "image/png",
+        size: atob(String(a.data)).length,
+      };
+      break;
+    }
   }
   return structuredClone(result) as Commands[K][1];
 }

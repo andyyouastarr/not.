@@ -19,6 +19,37 @@
   font-size: 14px;
   color-scheme: dark;
 }
+.idle-lock-settings select {
+  max-width: 145px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+}
+.idle-lock-custom {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  margin: 12px 0;
+}
+.idle-lock-custom label {
+  display: grid;
+  gap: 8px;
+}
+.idle-lock-custom input {
+  width: 125px;
+}
+.idle-lock-custom button {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.paste-status {
+  color: var(--accent);
+  font-size: 12px;
+  margin: 8px 0;
+}
 * {
   box-sizing: border-box;
 }

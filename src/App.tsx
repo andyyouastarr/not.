@@ -32,6 +32,7 @@ import type { Entry, Preferences, Summary } from "./types";
 import { api, demo, native, errorText, localDate } from "./api";
 import { ru } from "./ru";
 import JournalEditor, { hasContent, wordCount } from "./Editor";
+import IdleLockSettings from "./IdleLockSettings";
 import { SaveQueue } from "./saveQueue";
 import type { SaveState } from "./saveQueue";
 import EntryList from "./EntryList";
@@ -178,6 +179,7 @@ export default function App() {
     epoch = useRef(0),
     listArgs = useRef({ query, filter, date });
   const queue = useRef<SaveQueue | null>(null);
+  const imports = useRef(new Set<Promise<void>>());
   prefsRef.current = prefs;
   stageRef.current = stage;
   listArgs.current = { query, filter, date };
@@ -229,6 +231,9 @@ export default function App() {
       },
     );
   const flush = useCallback(async () => {
+    const currentEpoch = epoch.current;
+    while (imports.current.size) await Promise.all([...imports.current]);
+    if (currentEpoch !== epoch.current) return;
     if (timer.current) clearTimeout(timer.current);
     await queue.current!.flush();
   }, []);
@@ -238,6 +243,7 @@ export default function App() {
     queue.current!.reset(e);
   }, []);
   const clear = useCallback(() => {
+    imports.current.clear();
     epoch.current++;
     navigationId.current++;
     requestId.current++;
@@ -326,15 +332,21 @@ export default function App() {
     unsubs.push(listen("vault-locked", clear));
     unsubs.push(
       listen("vault-lock-request", () => {
+        const currentEpoch = epoch.current;
         void flush()
-          .finally(() => api("lock", {}))
+          .finally(() =>
+            currentEpoch === epoch.current ? api("lock", {}) : undefined,
+          )
           .catch(() => {});
       }),
     );
     unsubs.push(
       listen("close-request", () => {
+        const currentEpoch = epoch.current;
         void flush()
-          .then(() => api("close", {}))
+          .then(() =>
+            currentEpoch === epoch.current ? api("close", {}) : undefined,
+          )
           .catch((e) => setError(errorText(e)));
       }),
     );
@@ -346,7 +358,7 @@ export default function App() {
     if (stage !== "journal") return;
     let touched = 0;
     const activity = () => {
-      if (Date.now() - touched > 10000) {
+      if (Date.now() - touched > 1000) {
         touched = Date.now();
         void api("touch", {}).catch(() => {});
       }
@@ -446,8 +458,10 @@ export default function App() {
     }
   };
   const lock = async () => {
+    const currentEpoch = epoch.current;
     try {
       await flush();
+      if (currentEpoch !== epoch.current) return;
       await api("lock", {});
       clear();
     } catch (e) {
@@ -918,6 +932,10 @@ export default function App() {
                     editable={!entry.deleted}
                     onChange={(document) => update({ document })}
                     onError={setError}
+                    onImport={(task) => {
+                      imports.current.add(task);
+                      void task.finally(() => imports.current.delete(task));
+                    }}
                   />
                   <div className="document-end">
                     <span /> <Feather size={14} /> <span />
@@ -1047,6 +1065,22 @@ export default function App() {
           </div>
           <div className="settings-section">
             <h3>{ru.security}</h3>
+            <IdleLockSettings
+              minutes={prefs.idleLockMinutes ?? 30}
+              onSave={async (idleLockMinutes) => {
+                const currentEpoch = epoch.current;
+                try {
+                  const value = { ...prefsRef.current, idleLockMinutes };
+                  await api("setSettings", { value });
+                  if (epoch.current !== currentEpoch) return;
+                  prefsRef.current = { ...prefsRef.current, idleLockMinutes };
+                  setPrefs(prefsRef.current);
+                  setNotice(ru.settingSaved);
+                } catch (e) {
+                  if (epoch.current === currentEpoch) setError(errorText(e));
+                }
+              }}
+            />
             <PasswordChange
               busy={busy}
               onSubmit={(password) =>
@@ -1090,7 +1124,7 @@ export default function App() {
               <ChevronRight size={16} />
             </button>
           </div>
-          <p className="version">not. studio · 0.1.6</p>
+          <p className="version">not. studio · 0.1.7</p>
         </Modal>
       )}
       {modal === "restore" && (

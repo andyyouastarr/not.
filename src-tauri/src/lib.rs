@@ -1,5 +1,7 @@
+mod clipboard;
 mod crypto;
 mod export;
+mod idle;
 mod keyboard;
 mod links;
 mod session;
@@ -20,6 +22,7 @@ struct State {
     root: PathBuf,
     vault: Option<vault::Vault>,
     activity: Instant,
+    idle_minutes: u64,
     locking: Option<Instant>,
 }
 type Shared = Arc<Mutex<State>>;
@@ -65,6 +68,10 @@ enum Request {
         password: String,
     },
     AddAttachment,
+    ClipboardImageFiles,
+    AddPastedImage {
+        data: String,
+    },
     ReadAttachment {
         id: String,
     },
@@ -101,6 +108,17 @@ async fn dispatch(
         .map_err(|_| "Операция прервана")?
 }
 fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Value> {
+    if matches!(&request, Request::ClipboardImageFiles) {
+        if state
+            .lock()
+            .map_err(|_| "Хранилище недоступно")?
+            .vault
+            .is_none()
+        {
+            return Err("Дневник заблокирован".into());
+        }
+        return Ok(json!(clipboard::image_files()?));
+    }
     if let Request::OpenLink { url } = &request {
         if state
             .lock()
@@ -192,6 +210,7 @@ fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Valu
             password.zeroize();
             let (v, key) = result?;
             s.vault = Some(v);
+            s.idle_minutes = idle::DEFAULT_MINUTES;
             s.activity = Instant::now();
             s.locking = None;
             return Ok(json!({"recoveryKey":key}));
@@ -202,7 +221,9 @@ fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Valu
         } => {
             let result = vault::Vault::open(&s.root, &credential, recovery);
             credential.zeroize();
-            s.vault = Some(result?);
+            let v = result?;
+            s.idle_minutes = idle::minutes(&v.settings()?);
+            s.vault = Some(v);
             s.activity = Instant::now();
             s.locking = None;
             return Ok(json!(true));
@@ -300,9 +321,13 @@ fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Valu
                     "keyboardVisible",
                     "keyboardHeight",
                     "keyboardWidth",
+                    "idleLockMinutes",
                 ]
                 .contains(&k.as_str())
             }) || !value["opaque"].is_boolean()
+                || object
+                    .get("idleLockMinutes")
+                    .is_some_and(|v| v.as_u64().is_none_or(|n| n > 240))
                 || object
                     .get("keyboardVisible")
                     .is_some_and(|v| !v.is_boolean())
@@ -323,6 +348,11 @@ fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Valu
             let mut value = value;
             value["recoveryConfirmed"] = v.settings()?["recoveryConfirmed"].clone();
             v.set_settings(value)?;
+            let next_idle = idle::minutes(&v.settings()?);
+            if s.idle_minutes != next_idle {
+                s.idle_minutes = next_idle;
+                s.activity = Instant::now();
+            }
             Ok(json!(true))
         }
         Request::ChangePassword { mut password } => {
@@ -332,6 +362,19 @@ fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Valu
             Ok(json!(true))
         }
         Request::AddAttachment => Ok(json!(v.add_attachment(&selected.unwrap())?)),
+        Request::AddPastedImage { data } => {
+            use base64::Engine;
+            let data = zeroize::Zeroizing::new(data);
+            if data.len() > 35 * 1024 * 1024 {
+                return Err("Максимальный размер изображения — 25 МБ".into());
+            }
+            let bytes = zeroize::Zeroizing::new(
+                base64::engine::general_purpose::STANDARD
+                    .decode(data.as_bytes())
+                    .map_err(|_| "Некорректное изображение")?,
+            );
+            Ok(json!(v.add_pasted_image(&bytes)?))
+        }
         Request::ReadAttachment { id } => {
             use base64::Engine;
             let a = v.attachment(&id)?;
@@ -401,6 +444,7 @@ pub fn run() {
                 root: data.join("vault"),
                 vault: None,
                 activity: Instant::now(),
+                idle_minutes: idle::DEFAULT_MINUTES,
                 locking: None,
             }));
             app.manage(shared.clone());
@@ -432,7 +476,7 @@ pub fn run() {
                     continue;
                 }
                 if s.locking.is_none()
-                    && (s.activity.elapsed() > Duration::from_secs(300) || session::locked())
+                    && idle::due(s.idle_minutes, s.activity.elapsed(), session::locked())
                 {
                     s.locking = Some(Instant::now());
                     let _ = handle.emit("vault-lock-request", ());

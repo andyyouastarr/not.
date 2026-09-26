@@ -32,6 +32,7 @@ export interface Preferences {
   keyboardVisible?: boolean;
   keyboardHeight?: number;
   keyboardWidth?: number;
+  idleLockMinutes?: number;
 }
 export type SaveEntry = Pick<
   Entry,
@@ -60,6 +61,8 @@ export interface Commands {
   setSettings: [{ value: Preferences }, boolean];
   changePassword: [{ password: string }, boolean];
   addAttachment: [{}, Attachment | null];
+  addPastedImage: [{ data: string }, Attachment];
+  clipboardImageFiles: [{}, { data: string; mime: string }[]];
   readAttachment: [{ id: string }, { data: string; mime: string }];
   saveAttachment: [{ id: string }, boolean | null];
   backup: [{}, boolean | null];

@@ -536,6 +536,48 @@ impl Vault {
         } else {
             "application/octet-stream"
         };
+        self.store_attachment(io(File::open(path))?, name, mime, size)
+    }
+    pub fn add_pasted_image(&self, data: &[u8]) -> Result<Attachment> {
+        if data.is_empty() || data.len() > 25 * 1024 * 1024 {
+            return Err("Максимальный размер изображения — 25 МБ".into());
+        }
+        let mut decoder = png::Decoder::new(data);
+        decoder.set_limits(png::Limits {
+            bytes: 64 * 1024 * 1024,
+        });
+        let mut reader = decoder
+            .read_info()
+            .map_err(|_| "Некорректное PNG-изображение")?;
+        let info = reader.info();
+        if info.width == 0
+            || info.height == 0
+            || u64::from(info.width) * u64::from(info.height) > 16_000_000
+            || reader.output_buffer_size() > 64 * 1024 * 1024
+        {
+            return Err("Изображение слишком большое: максимум 16 миллионов пикселей".into());
+        }
+        let mut pixels = zeroize::Zeroizing::new(vec![0; reader.output_buffer_size()]);
+        reader
+            .next_frame(&mut pixels)
+            .map_err(|_| "Изображение повреждено")?;
+        self.store_attachment(
+            data,
+            format!(
+                "Вставленное изображение {}.png",
+                Local::now().format("%Y-%m-%d %H-%M-%S")
+            ),
+            "image/png",
+            data.len() as u64,
+        )
+    }
+    fn store_attachment(
+        &self,
+        input: impl Read,
+        name: String,
+        mime: &str,
+        size: u64,
+    ) -> Result<Attachment> {
         let a = Attachment {
             id: Uuid::new_v4().to_string(),
             name,
@@ -544,7 +586,7 @@ impl Vault {
         };
         let dest = self.root.join("files").join(&a.id);
         let mut tmp = io(tempfile::NamedTempFile::new_in(self.root.join("files")))?;
-        crypto::encrypt_file(io(File::open(path))?, tmp.as_file_mut(), &self.master)?;
+        crypto::encrypt_file(input, tmp.as_file_mut(), &self.master)?;
         io(tmp.as_file().sync_all())?;
         let written =
             crypto::decrypt_file(io(File::open(tmp.path()))?, std::io::sink(), &self.master)?;
@@ -745,6 +787,42 @@ impl Vault {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pasted_png_is_encrypted_restored_and_validated() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut v, key) = Vault::create(&dir.path().join("v"), "paste test password").unwrap();
+        let pixels: Vec<u8> = (0..256 * 256 * 4)
+            .map(|i| ((i * 73 + i / 97) % 256) as u8)
+            .collect();
+        let mut png = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png, 256, 256);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            encoder
+                .write_header()
+                .unwrap()
+                .write_image_data(&pixels)
+                .unwrap();
+        }
+        let a = v.add_pasted_image(&png).unwrap();
+        assert_eq!(v.read_attachment(&a.id).unwrap(), png);
+        assert_ne!(fs::read(v.root.join("files").join(&a.id)).unwrap(), png);
+        assert!(v.add_pasted_image(b"not an image").is_err());
+        assert!(v.add_pasted_image(&png[..png.len() / 2]).is_err());
+        assert!(v.add_pasted_image(&vec![0; 25 * 1024 * 1024 + 1]).is_err());
+        let mut e = entry("Вставленное изображение");
+        e.document["content"].as_array_mut().unwrap().push(serde_json::json!({"type":"image","attrs":{"attachmentId":a.id,"name":a.name,"mime":a.mime,"size":a.size}}));
+        v.save(e).unwrap();
+        let mut settings = v.settings().unwrap();
+        settings["idleLockMinutes"] = serde_json::json!(0);
+        v.set_settings(settings).unwrap();
+        let archive = dir.path().join("paste.notbackup");
+        v.backup(&archive).unwrap();
+        let restored = Vault::restore(&archive, &dir.path().join("restored"), &key, true).unwrap();
+        assert_eq!(restored.read_attachment(&a.id).unwrap(), png);
+        assert_eq!(crate::idle::minutes(&restored.settings().unwrap()), 0);
+    }
     fn entry(text: &str) -> SaveEntry {
         SaveEntry {
             id: Uuid::new_v4().to_string(),

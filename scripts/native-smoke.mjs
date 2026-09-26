@@ -13,6 +13,35 @@ const exe = path.join(root, "src-tauri/target/debug/not-studio.exe");
 const imageFixture = process.env.NOT_STUDIO_TEST_ATTACHMENT;
 const keyboardTest = process.env.NOT_STUDIO_TEST_KEYBOARD === "1";
 const linkTest = process.env.NOT_STUDIO_TEST_LINK === "1";
+const pasteIdleTest = process.env.NOT_STUDIO_TEST_PASTE_IDLE === "1";
+const pasteRaceTest = process.env.NOT_STUDIO_TEST_PASTE_RACE === "1";
+let clipboardHelper,
+  pastedImageCount = 0;
+async function waitClipboard(message) {
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(Error("Clipboard helper timeout"));
+    }, 10000);
+    const data = (chunk) => {
+      if (chunk.toString().includes(message)) {
+        cleanup();
+        resolve();
+      }
+    };
+    const exited = () => {
+      cleanup();
+      reject(Error("Clipboard helper stopped"));
+    };
+    function cleanup() {
+      clearTimeout(timeout);
+      clipboardHelper.stdout.off("data", data);
+      clipboardHelper.off("exit", exited);
+    }
+    clipboardHelper.stdout.on("data", data);
+    clipboardHelper.once("exit", exited);
+  });
+}
 let linkServer, linkUrl, linkVisited, linkTimer;
 const keyboardTimings = [];
 let expectedTitle = "Проверка нативного дневника";
@@ -166,6 +195,58 @@ try {
     .click();
   await page.getByRole("menuitem", { name: "Таблица 3 × 3" }).click();
   await page.getByRole("button", { name: "Сохранено", exact: true }).waitFor();
+  if (pasteRaceTest) {
+    await page.evaluate(async () => {
+      const original = window.createImageBitmap.bind(window);
+      window.createImageBitmap = (...args) =>
+        new Promise((resolve) => {
+          window.resumePasteTest = () => {
+            window.createImageBitmap = original;
+            resolve(original(...args));
+          };
+        });
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 10;
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve));
+      const data = new DataTransfer();
+      data.items.add(new File([blob], "delayed.png", { type: "image/png" }));
+      document
+        .querySelector(".tiptap")
+        .dispatchEvent(
+          new ClipboardEvent("paste", {
+            bubbles: true,
+            cancelable: true,
+            clipboardData: data,
+          }),
+        );
+      await window.__TAURI_INTERNALS__.invoke("plugin:event|emit", {
+        event: "vault-lock-request",
+        payload: null,
+      });
+      await window.__TAURI_INTERNALS__.invoke("dispatch", {
+        request: { type: "lock" },
+      });
+    });
+    await page
+      .getByLabel("Пароль", { exact: true })
+      .fill("native smoke test password");
+    await page
+      .getByRole("button", { name: "Открыть дневник", exact: true })
+      .click();
+    await page.getByLabel("Название записи").waitFor();
+    await page.evaluate(() => window.resumePasteTest());
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    assert.equal(
+      await page.locator(".tiptap").count(),
+      1,
+      "Late lock callback must not lock the new session",
+    );
+    assert.equal(
+      await page.locator(".node-image").count(),
+      0,
+      "Cancelled image must not enter the reopened diary",
+    );
+  }
   if (imageFixture) {
     await page
       .getByRole("button", { name: "Новая запись", exact: true })
@@ -402,6 +483,96 @@ try {
       .waitFor();
     await page.screenshot({ path: "artifacts/native-keyboard-highlight.png" });
   }
+  if (pasteIdleTest) {
+    const fixture = await page.evaluate(() => {
+      const c = document.createElement("canvas");
+      c.width = 800;
+      c.height = 500;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#986ccd";
+      ctx.fillRect(0, 0, 800, 500);
+      ctx.fillStyle = "#20dd50";
+      ctx.fillRect(0, 400, 800, 100);
+      return c.toDataURL("image/png").split(",")[1];
+    });
+    const fixturePath = path.join(profile, "clipboard-fixture.png");
+    await writeFile(fixturePath, Buffer.from(fixture, "base64"));
+    clipboardHelper = spawn(
+      "powershell",
+      [
+        "-NoProfile",
+        "-STA",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "scripts/test-clipboard.ps1",
+      ],
+      {
+        cwd: root,
+        windowsHide: true,
+        env: { ...process.env, NOT_TEST_CLIPBOARD_IMAGE: fixturePath },
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+    await waitClipboard("image-ready");
+    const pasteEditor = page.getByRole("textbox", { name: "Текст записи" });
+    await pasteEditor.click();
+    await pasteEditor.press("Control+End");
+    await pasteEditor.press("Control+v");
+    await page.waitForFunction(
+      () => document.querySelectorAll(".node-image img").length === 1,
+    );
+    await page.locator(".node-image img").evaluate(async (img) => {
+      await img.decode();
+      assertImage(img);
+      function assertImage(i) {
+        if (i.naturalWidth !== 800 || i.naturalHeight !== 500)
+          throw Error("Pasted image dimensions mismatch");
+      }
+    });
+    const ready = waitClipboard("files-ready");
+    clipboardHelper.stdin.write("files\n");
+    await ready;
+    await pasteEditor.click();
+    await pasteEditor.press("Control+End");
+    await pasteEditor.press("Control+v");
+    await page.waitForFunction(
+      () => document.querySelectorAll(".node-image img").length === 2,
+    );
+    pastedImageCount = 2;
+    await page
+      .getByRole("button", { name: "Сохранено", exact: true })
+      .waitFor();
+    clipboardHelper.stdin.end("restore\n");
+    await new Promise((resolve) => clipboardHelper.once("exit", resolve));
+    clipboardHelper = null;
+    await page
+      .getByRole("button", { name: "Настройки", exact: true })
+      .first()
+      .click();
+    const select = page.getByRole("combobox", {
+      name: "Блокировка при бездействии",
+    });
+    assert.equal(await select.inputValue(), "30");
+    await select.selectOption("0");
+    await page.waitForFunction(
+      async () =>
+        (
+          await window.__TAURI_INTERNALS__.invoke("dispatch", {
+            request: { type: "settings" },
+          })
+        ).idleLockMinutes === 0,
+    );
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Закрыть", exact: true })
+      .click();
+    console.log(
+      "Native clipboard bitmap and Explorer file paste passed; checking disabled idle timer for 65 seconds.",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 65000));
+    assert.equal(await page.locator(".tiptap").count(), 1);
+  }
   await page.screenshot({ path: "artifacts/native-journal.png" });
   await stop();
   await browser.close();
@@ -515,9 +686,48 @@ try {
       /Текст справа/,
     );
   } else assert.equal(await page.locator(".tiptap table").count(), 1);
-  await page
-    .getByRole("button", { name: "Заблокировать", exact: true })
-    .click();
+  if (pasteIdleTest) {
+    assert.equal(
+      await page.locator(".node-image img").count(),
+      pastedImageCount,
+    );
+    for (const image of await page.locator(".node-image img").all())
+      await image.evaluate(async (i) => {
+        await i.decode();
+        if (i.naturalHeight !== 500)
+          throw Error("Pasted image lost after restart");
+      });
+    await page
+      .getByRole("button", { name: "Настройки", exact: true })
+      .first()
+      .click();
+    const choice = page.getByRole("combobox", {
+      name: "Блокировка при бездействии",
+    });
+    assert.equal(await choice.inputValue(), "0");
+    await choice.selectOption("1");
+    await page.waitForFunction(
+      async () =>
+        (
+          await window.__TAURI_INTERNALS__.invoke("dispatch", {
+            request: { type: "settings" },
+          })
+        ).idleLockMinutes === 1,
+    );
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Закрыть", exact: true })
+      .click();
+    console.log(
+      "Restart preserved images and disabled setting; waiting for one-minute native idle lock.",
+    );
+    await page
+      .getByRole("heading", { name: "С возвращением." })
+      .waitFor({ timeout: 70000 });
+  } else
+    await page
+      .getByRole("button", { name: "Заблокировать", exact: true })
+      .click();
   await page.getByRole("heading", { name: "С возвращением." }).waitFor();
   assert.equal(await page.locator(".tiptap").count(), 0);
   assert.equal(await page.locator(".keyboard-guide").count(), 0);
@@ -539,6 +749,22 @@ try {
           deviceScaleFactor: devicePixelRatio,
         })),
         checks: [
+          ...(pasteRaceTest
+            ? [
+                "delayed image cancelled on lock",
+                "stale lock callback does not lock reopened session",
+              ]
+            : []),
+          ...(pasteIdleTest
+            ? [
+                "real Windows bitmap clipboard paste",
+                "Explorer file clipboard paste",
+                "pasted images survive restart",
+                "idle default 30 minutes",
+                "never remains unlocked for 65 seconds and survives restart",
+                "one-minute native idle lock",
+              ]
+            : []),
           ...(linkTest && !imageFixture
             ? [
                 "saved link opened through Windows default handler and reached local HTTP server",
@@ -584,6 +810,10 @@ try {
   }
   throw error;
 } finally {
+  if (clipboardHelper) {
+    clipboardHelper.stdin.end("restore\n");
+    await new Promise((resolve) => clipboardHelper.once("exit", resolve));
+  }
   clearTimeout(linkTimer);
   if (linkServer) {
     linkServer.closeAllConnections();

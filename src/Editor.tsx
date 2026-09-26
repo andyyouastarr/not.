@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Node, Extension, mergeAttributes } from "@tiptap/core";
 import { EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import type { Editor as EditorType, JSONContent } from "@tiptap/react";
@@ -33,12 +33,13 @@ import {
   Table,
   ChevronDown,
 } from "lucide-react";
-import { api, errorText } from "./api";
+import { api, errorText, native } from "./api";
 import { ru } from "./ru";
 import type { Attachment } from "./types";
 import AttachmentView from "./AttachmentView";
 import { HighlightMark, HighlightTools } from "./Highlight";
 import { externalUrl, openLink } from "./links";
+import { importImage, clipboardFiles } from "./pasteImage";
 
 function imageDropTarget(view: EditorView, x: number, y: number) {
   const coords = view.posAtCoords({ left: x, top: y });
@@ -150,13 +151,16 @@ type Props = {
   editable: boolean;
   onChange: (v: JSONContent) => void;
   onError: (e: string) => void;
+  onImport: (task: Promise<void>) => void;
 };
 export default function JournalEditor({
   document,
   editable,
   onChange,
   onError,
+  onImport,
 }: Props) {
+  const [pasting, setPasting] = useState(0);
   const [menu, setMenu] = useState(false),
     [slash, setSlash] = useState(false),
     [link, setLink] = useState<string | null>(null),
@@ -166,6 +170,63 @@ export default function JournalEditor({
     left: number;
     width: number;
   } | null>(null);
+  const pasteSequence = useRef(0);
+  const pasteFiles = (files: Blob[] | Promise<Blob[]>) => {
+    const current = editor!;
+    let bookmark = current.state.selection.getBookmark();
+    const map = ({
+      transaction,
+    }: {
+      transaction: import("@tiptap/pm/state").Transaction;
+    }) => {
+      bookmark = bookmark.map(transaction.mapping);
+    };
+    current.on("transaction", map);
+    setPasting((n) => n + 1);
+    const task = (async () => {
+      try {
+        const attachments = [];
+        for (const file of await files) {
+          if (current.isDestroyed) return;
+          attachments.push(
+            await importImage(
+              file,
+              () => !current.isDestroyed && current.isEditable,
+            ),
+          );
+        }
+        if (current.isDestroyed || !current.isEditable || !attachments.length)
+          return;
+        const selection = bookmark.resolve(current.state.doc);
+        current
+          .chain()
+          .command(({ tr }) => {
+            closeHistory(tr);
+            tr.setSelection(selection);
+            return true;
+          })
+          .insertContent(
+            attachments.map((a) => ({
+              type: "image",
+              attrs: {
+                attachmentId: a.id,
+                name: a.name,
+                size: a.size,
+                mime: a.mime,
+              },
+            })),
+          )
+          .run();
+        current.view.dispatch(closeHistory(current.state.tr));
+      } catch (e) {
+        if (!current.isDestroyed) onError(errorText(e));
+      } finally {
+        current.off("transaction", map);
+        if (!current.isDestroyed) setPasting((n) => n - 1);
+      }
+    })();
+    onImport(task);
+  };
   const editor = useEditor({
     extensions: [
       Extension.create({
@@ -233,6 +294,23 @@ export default function JournalEditor({
           return true;
         },
         keydown: (view, event) => {
+          if (
+            native &&
+            view.editable &&
+            event.ctrlKey &&
+            !event.shiftKey &&
+            event.code === "KeyV"
+          ) {
+            const sequence = pasteSequence.current;
+            pasteFiles(
+              (async () => {
+                await new Promise((resolve) => setTimeout(resolve, 80));
+                if (sequence !== pasteSequence.current) return [];
+                const files = await clipboardFiles();
+                return sequence === pasteSequence.current ? files : [];
+              })(),
+            );
+          }
           const anchor = event.target as HTMLElement;
           if (
             event.key !== "Enter" ||
@@ -307,8 +385,28 @@ export default function JournalEditor({
         return false;
       },
       handlePaste: (_view, event) => {
+        pasteSequence.current++;
         if (event.clipboardData?.files.length) {
-          onError("Для добавления файла используйте «Фото или файл».");
+          if (!_view.editable) return true;
+          const files = Array.from(event.clipboardData.files);
+          if (files.some((f) => !f.type.startsWith("image/"))) {
+            onError(ru.pasteImagesOnly);
+            return true;
+          }
+          if (files.length > 8) {
+            onError("Вставляйте не больше 8 изображений за раз");
+            return true;
+          }
+          pasteFiles(files);
+          return true;
+        }
+        if (
+          native &&
+          _view.editable &&
+          !event.clipboardData?.getData("text/plain") &&
+          !event.clipboardData?.getData("text/html")
+        ) {
+          pasteFiles(clipboardFiles());
           return true;
         }
         return false;
@@ -482,6 +580,11 @@ export default function JournalEditor({
   ];
   return (
     <div className="editor-shell">
+      {pasting > 0 && (
+        <div className="paste-status" role="status">
+          {ru.imagePasting}
+        </div>
+      )}
       {dropCue && (
         <div
           className="image-drop-cue"
