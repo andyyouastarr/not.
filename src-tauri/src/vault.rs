@@ -321,6 +321,7 @@ impl Vault {
         )?;
         let conn = connect(&staging.path().join(DB), &master)?;
         schema(&conn)?;
+        crate::planner::schema(&conn)?;
         sql(conn.execute(
             "INSERT INTO settings(key,value) VALUES('pending_recovery',?)",
             [&recovery],
@@ -348,15 +349,34 @@ impl Vault {
         let master = crypto::unlock(&manifest, credential, recovery)?;
         let conn = connect(&root.join(DB), &master)?;
         let version: i64 = sql(conn.query_row("PRAGMA user_version", [], |r| r.get(0)))?;
-        if version != 1 {
+        if version != 1 && version != 2 {
             return Err("Версия базы не поддерживается. Обновите приложение.".into());
         }
-        Ok(Self {
+        let vault = Self {
             root: root.into(),
             conn,
             master,
             manifest,
-        })
+        };
+        if version == 1 {
+            let folder = root
+                .parent()
+                .ok_or("Неверный путь")?
+                .join("migration-backups");
+            io(fs::create_dir_all(&folder))?;
+            let path = folder.join(format!("before-planner-{}.notbackup", Uuid::new_v4()));
+            vault.backup(&path)?;
+            // Read every archive member to its end: ZIP CRC validation must succeed
+            // before any schema mutation. This archive is outside daily retention.
+            let mut archive = zip::ZipArchive::new(io(File::open(&path))?)
+                .map_err(|_| "Ошибка проверки копии")?;
+            for i in 0..archive.len() {
+                let mut member = archive.by_index(i).map_err(|_| "Ошибка проверки копии")?;
+                io(std::io::copy(&mut member, &mut std::io::sink()))?;
+            }
+            crate::planner::schema(&vault.conn)?;
+        }
+        Ok(vault)
     }
     pub fn save(&mut self, e: SaveEntry) -> Result<Entry> {
         valid_id(&e.id)?;
@@ -647,6 +667,10 @@ impl Vault {
             let backup = sql(rusqlite::backup::Backup::new(&self.conn, &mut snapshot))?;
             sql(backup.run_to_completion(128, Duration::from_millis(1), None))?;
         }
+        let check: String = sql(snapshot.query_row("PRAGMA integrity_check", [], |r| r.get(0)))?;
+        if check != "ok" {
+            return Err("Не удалось проверить снимок базы".into());
+        }
         drop(snapshot);
         let mut tmp = io(tempfile::NamedTempFile::new_in(
             dest.parent().ok_or("Неверный путь")?,
@@ -778,6 +802,7 @@ impl Vault {
             }
         }
         drop(stmt);
+        vault.validate_planner()?;
         drop(vault);
         rename_directory(staging.path(), destination)?;
         Self::open(destination, credential, recovery)

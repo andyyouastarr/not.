@@ -1,0 +1,476 @@
+.mode-tabs {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.mode-tabs button {
+  border: 0;
+  background: transparent;
+  color: var(--muted, #9d94a7);
+  padding: 0;
+  font-size: 15px;
+  font-weight: 500;
+}
+.mode-tabs h1 {
+  font-size: 16px !important;
+  margin: 0;
+}
+.planner-rail .entry-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.planner-filters {
+  display: flex;
+  gap: 4px;
+  padding: 0 12px 16px;
+}
+.planner-filters button {
+  flex: 1;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  padding: 8px 4px;
+  color: #aaa2b5;
+  font-size: 11px;
+}
+.planner-filters button[aria-pressed="true"] {
+  color: #e0d6ef;
+  border-color: #b9a0e32a;
+  background: #b9a0e310;
+}
+.planner-inbox {
+  flex: 1;
+  min-height: 80px;
+  overflow: auto;
+  padding: 0 12px 16px;
+}
+.planner-empty {
+  color: #928a9e;
+  font-size: 12px;
+  line-height: 1.8;
+  padding: 18px;
+}
+.planner-rail-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 16px;
+  border-top: 1px solid #ffffff0c;
+}
+.planner-rail-footer button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 0;
+  color: #aaa0b7;
+}
+.planner-main {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #1d1c23;
+}
+.planner-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 30px 28px 24px;
+}
+.planner-heading h2 {
+  font-size: 24px;
+  font-weight: 500;
+  margin: 8px 0 0;
+}
+.planner-heading .eyebrow {
+  font-size: 9px;
+  margin: 0;
+}
+.planner-heading > button,
+.planner-recovery button,
+.planner-error button {
+  background: #b8a1de0b;
+  border: 1px solid #b8a1de24;
+  border-radius: 8px;
+  color: #c5b8d9;
+  padding: 9px 12px;
+  font-size: 12px;
+}
+.board-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  padding: 0 24px 22px;
+}
+.kanban-board {
+  height: 100%;
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  padding-bottom: 12px;
+  container-type: inline-size;
+}
+.kanban-column {
+  flex: 0 0 max(260px, calc((100% - 56px) / 5));
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #ffffff09;
+  border-radius: 12px;
+  background: #ffffff02;
+}
+.kanban-column > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 18px 14px;
+  border-bottom: 1px solid #ffffff08;
+  min-height: 65px;
+}
+.kanban-column h3 {
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 500;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.kanban-column > header > span {
+  font-size: 11px;
+  color: #938a9f;
+}
+.kanban-cards {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+  scrollbar-width: thin;
+}
+.planner-card {
+  border: 1px solid #ffffff0d;
+  border-radius: 9px;
+  background: #27252e;
+  margin-bottom: 10px;
+  box-shadow: 0 3px 8px #00000012;
+  overflow-wrap: anywhere;
+}
+.planner-card:hover {
+  border-color: #b8a1de40;
+}
+.planner-card[data-movable="true"] {
+  cursor: grab;
+  touch-action: none;
+}
+.task-dragging,
+.task-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+.task-drop-slot {
+  border: 1px dashed #b8a1de70;
+  background: #b8a1de0c;
+  border-radius: 9px;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+}
+.task-drag-overlay {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  overflow: hidden;
+  padding: 15px;
+  background: #302b3c;
+  border: 1px solid #b8a1de80;
+  border-radius: 9px;
+  box-shadow: 0 15px 35px #0007;
+  color: #d7d0e1;
+  box-sizing: border-box;
+}
+.task-drag-overlay strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.task-drag-overlay p {
+  font-size: 11px;
+  color: #a59bac;
+  line-height: 1.65;
+}
+.task-saving {
+  opacity: 0.65;
+}
+.planner-transfer-status {
+  padding: 0 24px;
+  color: #b6a7ca;
+  font-size: 12px;
+}
+.planner-card-open {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: left;
+  width: 100%;
+  padding: 15px;
+  color: #d7d0e1;
+  background: transparent;
+  border: 0;
+  cursor: inherit;
+}
+.planner-card-open strong {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.planner-card-open > span {
+  font-size: 11px;
+  line-height: 1.65;
+  color: #a59bac;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.planner-card time,
+.planner-card small {
+  font-size: 10px;
+  color: #b4a5c6;
+}
+.planner-card time.overdue {
+  color: #e9a3ae;
+}
+.planner-card.completed {
+  border-color: #a1c4ae22;
+}
+.card-menu {
+  padding: 0 15px 10px;
+  font-size: 10px;
+  color: #a398b1;
+}
+.card-menu summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.card-menu > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+.card-menu button,
+.card-menu select {
+  font: inherit;
+  color: inherit;
+  background: #24212b;
+  border: 1px solid #ffffff16;
+  border-radius: 5px;
+  padding: 6px;
+}
+.card-menu select {
+  width: 100%;
+}
+.drop-before {
+  box-shadow: 0 -3px 0 #b8a1de;
+}
+.board-edge {
+  position: absolute;
+  top: 44%;
+  width: 22px;
+  height: 72px;
+  padding: 0;
+  border: 1px solid #b8a1de20;
+  border-radius: 8px;
+  color: #b6a7ca;
+  background: #24212de8;
+  font-size: 25px;
+  z-index: 2;
+}
+.board-edge.left {
+  left: 1px;
+}
+.board-edge.right {
+  right: 1px;
+}
+.planner-collection {
+  overflow: auto;
+  padding: 0 28px 28px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  align-content: start;
+  align-items: start;
+  gap: 14px;
+}
+.planner-recovery,
+.planner-error {
+  margin: 0 24px 20px;
+  padding: 16px;
+  border: 1px solid #b8a1de35;
+  border-radius: 10px;
+  font-size: 13px;
+}
+.planner-recovery button {
+  margin-right: 10px;
+}
+.modal.task-dialog {
+  width: min(1050px, calc(100vw - 48px));
+  max-width: none;
+  height: min(850px, calc(100dvh - 48px));
+  max-height: calc(100dvh - 48px);
+  padding: 0;
+}
+.task-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.task-dialog > header {
+  flex-shrink: 0;
+  padding: 22px 28px 0;
+}
+.task-dialog > header button {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font-size: 24px;
+}
+.task-fields {
+  display: flex;
+  gap: 20px;
+  padding: 20px 28px;
+}
+.task-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #ada2bb;
+  font-size: 12px;
+}
+.task-fields label:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.task-fields input {
+  width: 100%;
+  min-width: 0;
+  background: #ffffff04;
+  border: 1px solid #ffffff15;
+  border-radius: 8px;
+  padding: 11px;
+  color: #e1d9ec;
+  font: inherit;
+}
+.task-description {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 28px 24px;
+}
+.task-description .editor {
+  min-height: 220px;
+}
+.task-description .editor-tools {
+  top: 0;
+}
+.task-dialog-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid #ffffff0e;
+  padding: 14px 28px;
+  flex-shrink: 0;
+}
+.task-dialog-footer > div {
+  flex: 1;
+  min-width: 100px;
+  font-size: 11px;
+  color: #a99bb9;
+}
+.task-dialog-footer button,
+.stage-setting-actions button,
+.stage-removal button {
+  padding: 8px 13px;
+  border: 1px solid #b8a1de30;
+  border-radius: 7px;
+  background: #b8a1de0c;
+  color: #dbd1e7;
+  font-size: 12px;
+}
+.task-dialog-footer button.primary {
+  background: #b8a1de;
+  color: #211c2b;
+}
+.planner-settings > p {
+  font-size: 12px;
+  color: #a79bb7;
+  line-height: 1.7;
+}
+.stage-setting {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 10px 0;
+}
+.planner-settings-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.stage-setting > input {
+  min-width: 0;
+  width: 100%;
+}
+.stage-setting label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  font-size: 10px;
+}
+.stage-setting button {
+  padding: 5px;
+  border: 0;
+  background: transparent;
+  color: #b9acc9;
+}
+.stage-setting-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.stage-removal {
+  padding: 12px;
+  border: 1px solid #b8a1de33;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.stage-removal select {
+  max-width: 100%;
+  margin-bottom: 10px;
+}
+.stage-removal button {
+  margin: 3px;
+}
+@media (max-width: 900px) {
+  .planner-heading {
+    padding: 22px 18px;
+  }
+  .planner-heading h2 {
+    font-size: 20px;
+  }
+  .task-fields {
+    flex-wrap: wrap;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kanban-board {
+    scroll-behavior: auto;
+  }
+}

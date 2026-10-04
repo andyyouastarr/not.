@@ -39,6 +39,11 @@ export type SaveEntry = Pick<
   "id" | "date" | "title" | "document" | "revision"
 >;
 export interface Commands {
+  planner: [{}, import("./planner/types").Board];
+  plannerChange: [
+    { change: import("./planner/types").Change },
+    import("./planner/types").Board,
+  ];
   pendingRecovery: [{}, string | null];
   status: [{}, { exists: boolean; unlocked: boolean }];
   create: [{ password: string }, { recoveryKey: string }];

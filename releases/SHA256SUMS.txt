@@ -1,2 +1,2 @@
-46f1da5d21acd795f6d39f1a1a66725251c7fbe3fafcf62aed89f377caf35510  not-studio-0.1.7-windows-x64-setup.exe
-d60473d4e42ad5d85a0b7cb949135599c57c7425f84277b15d94281570004b75  not-studio-0.1.6-windows-x64-setup.exe
+dc8fa0e46aa002232ef7d3c46fa7ac26c10c569291336f0486df42695f296b9f  not-studio-0.2.1-windows-x64-setup.exe
+9c4b65a73256f621bd4aaa920d0f014bf7aa51132d4d1761f1787355f8962ed1  not-studio-0.2.0-windows-x64-setup.exe

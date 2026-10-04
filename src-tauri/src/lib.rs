@@ -4,6 +4,7 @@ mod export;
 mod idle;
 mod keyboard;
 mod links;
+mod planner;
 mod session;
 mod vault;
 use crypto::Result;
@@ -29,6 +30,10 @@ type Shared = Arc<Mutex<State>>;
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 enum Request {
+    Planner,
+    PlannerChange {
+        change: planner::Change,
+    },
     Status,
     Create {
         password: String,
@@ -298,6 +303,8 @@ fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Valu
             Ok(json!(true))
         }
         Request::PendingRecovery => Ok(json!(v.pending_recovery()?)),
+        Request::Planner => Ok(json!(v.planner()?)),
+        Request::PlannerChange { change } => Ok(json!(v.planner_change(change)?)),
         Request::List {
             query,
             filter,

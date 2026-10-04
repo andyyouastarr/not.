@@ -1,6 +1,7 @@
 // Development-only, opt-in preview. No persistence, encryption claims, or production fallback.
 import type { Commands, Entry, Preferences, Summary } from "./types";
 import { localDate } from "./api";
+import { preview } from "./planner/demo";
 let preferences: Preferences = {
   opaque: false,
   lastEntry: "demo-1",
@@ -81,6 +82,12 @@ export async function mock<K extends keyof Commands>(
   const a = args as Record<string, unknown>;
   let result: unknown = true;
   switch (type) {
+    case "planner":
+      result = preview();
+      break;
+    case "plannerChange":
+      result = preview((args as Commands["plannerChange"][0]).change);
+      break;
     case "status":
       result = { exists: true, unlocked: true };
       break;

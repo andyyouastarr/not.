@@ -37,6 +37,8 @@ import { SaveQueue } from "./saveQueue";
 import type { SaveState } from "./saveQueue";
 import EntryList from "./EntryList";
 import KeyboardGuide from "./KeyboardGuide";
+import Planner, { type PlannerHandle } from "./planner/Planner";
+import PlannerSettings from "./planner/PlannerSettings";
 
 function IconButton({
   title,
@@ -145,6 +147,8 @@ function blank(): Entry {
 }
 
 export default function App() {
+  const [mode, setMode] = useState<"diary" | "planner">("diary");
+  const planner = useRef<PlannerHandle>(null);
   const [stage, setStage] = useState<
     "loading" | "create" | "locked" | "recovery" | "journal"
   >("loading");
@@ -236,6 +240,7 @@ export default function App() {
     if (currentEpoch !== epoch.current) return;
     if (timer.current) clearTimeout(timer.current);
     await queue.current!.flush();
+    await planner.current?.flush();
   }, []);
   const showEntry = useCallback((e: Entry | null) => {
     entryRef.current = e;
@@ -259,6 +264,7 @@ export default function App() {
     setError("");
     setNotice("");
     setStage("locked");
+    setMode("diary");
   }, []);
   const openJournal = useCallback(async () => {
     const currentEpoch = epoch.current;
@@ -473,7 +479,8 @@ export default function App() {
       if (stageRef.current !== "journal") return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
         e.preventDefault();
-        void createEntry();
+        if (mode === "planner") planner.current?.create();
+        else void createEntry();
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
@@ -634,7 +641,7 @@ export default function App() {
         </div>
       ) : (
         <div
-          className={`workspace ${!sidebar ? "nav-collapsed" : ""} ${focus ? "focus-mode" : ""} ${prefs.keyboardVisible ? "keyboard-docked" : ""}`}
+          className={`workspace ${!sidebar ? "nav-collapsed" : ""} ${focus ? "focus-mode" : ""} ${mode === "diary" && prefs.keyboardVisible ? "keyboard-docked" : ""}`}
           style={
             {
               "--keyboard-dock-width": `${Math.min(prefs.keyboardWidth ?? 360, 520)}px`,
@@ -651,13 +658,22 @@ export default function App() {
               </IconButton>
             </div>
             <p className="sidebar-caption">{ru.tagline}</p>
-            <button className="new-button" onClick={() => void createEntry()}>
+            <button
+              className="new-button"
+              onClick={() =>
+                mode === "planner"
+                  ? planner.current?.create()
+                  : void createEntry()
+              }
+            >
               <Plus size={17} />
-              <span>{ru.newEntry}</span>
+              <span>{mode === "planner" ? "Новая задача" : ru.newEntry}</span>
               <kbd>Ctrl N</kbd>
             </button>
-            <div className="nav-label">МОЁ ПРОСТРАНСТВО</div>
-            <nav>
+            <div className="nav-label">
+              {mode === "planner" ? "ЛИЧНЫЙ ПЛАНЕР" : "МОЁ ПРОСТРАНСТВО"}
+            </div>
+            <nav hidden={mode === "planner"}>
               {[
                 { id: "all", label: ru.all, icon: BookOpen },
                 { id: "favorites", label: ru.favorites, icon: Star },
@@ -702,321 +718,375 @@ export default function App() {
               </div>
             </div>
           </aside>
-          <div className="entry-column">
-            <section className="entry-list">
-              <header>
-                <div>
-                  {!sidebar && (
-                    <IconButton
-                      title={ru.expand}
-                      onClick={() => setSidebar(true)}
-                    >
-                      <PanelLeftOpen size={17} />
-                    </IconButton>
-                  )}
-                  <h1>{ru.journal}</h1>
-                </div>
-                <IconButton
-                  title={ru.newEntry}
-                  onClick={() => void createEntry()}
-                >
-                  <Plus size={19} />
-                </IconButton>
-              </header>
-              <div className="compact-nav">
-                <select
-                  aria-label="Раздел дневника"
-                  value={filter}
-                  onChange={(e) => {
-                    setFilter(e.target.value);
-                    setQuery("");
-                    setDate("");
-                  }}
-                >
-                  <option value="all">{ru.all}</option>
-                  <option value="favorites">{ru.favorites}</option>
-                  <option value="trash">{ru.trash}</option>
-                </select>
-                <IconButton title={ru.lock} onClick={() => void lock()}>
-                  <Lock size={15} />
-                </IconButton>
-              </div>
-              <div className="search-box">
-                <Search size={16} />
-                <input
-                  id="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={ru.search}
-                  aria-label={ru.search}
-                />
-                <kbd>Ctrl K</kbd>
-              </div>
-              <div className="list-filter">
-                <span>{date ? dateLabel(date) : groupTitle}</span>
-                <label className="calendar-button" title={ru.calendar}>
-                  <CalendarDays size={16} />
-                  <input
-                    type="date"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    aria-label={ru.calendar}
-                  />
-                </label>
-                {date && (
-                  <IconButton title={ru.clearDate} onClick={() => setDate("")}>
-                    <X size={13} />
-                  </IconButton>
-                )}
-              </div>
-              <EntryList
-                rows={rows}
-                currentId={entry?.id}
-                onSelect={(id) => void navigate(id)}
-                more={more}
-                onMore={() => void task(loadMore)}
-                scope={`${filter}/${query}/${date}`}
-                empty={
-                  query
-                    ? ru.emptySearch
-                    : filter === "trash"
-                      ? ru.emptyTrash
-                      : filter === "favorites"
-                        ? ru.emptyFavorites
-                        : "Пока нет записей"
-                }
-              />
-              <footer className="list-footer">
-                <ShieldCheck size={13} />
-                {ru.encrypted}
-                <span>
-                  {rows.length}
-                  {more ? "+" : ""}
-                </span>
-              </footer>
-            </section>
-            {prefs.keyboardVisible && (
-              <KeyboardGuide
-                height={prefs.keyboardHeight ?? 190}
-                width={Math.min(prefs.keyboardWidth ?? 360, 520)}
-                onWidth={(keyboardWidth) => updateKeyboard({ keyboardWidth })}
-                onHeight={(keyboardHeight) =>
-                  updateKeyboard({ keyboardHeight })
-                }
-                onClose={() => updateKeyboard({ keyboardVisible: false })}
-              />
-            )}
-          </div>
-          <main className="journal-main">
-            <header className="journal-top">
-              <div className="breadcrumb">
-                {focus && (
-                  <IconButton
-                    title={ru.exitFocus}
-                    onClick={() => setFocus(false)}
-                  >
-                    <Minimize2 size={16} />
-                  </IconButton>
-                )}
-                <BookOpen size={14} />
-                <span>{ru.journal}</span>
-                <ChevronRight size={12} />
-                <span>{entry ? dateLabel(entry.date) : ru.tagline}</span>
-              </div>
-              <div className="journal-actions">
-                {entry && (
-                  <>
-                    <button
-                      className={`save-indicator ${saveState}`}
-                      onClick={() =>
-                        void flush().catch((e) => setError(errorText(e)))
-                      }
-                      title={saveState === "error" ? ru.retry : ru.autosaveNote}
-                    >
-                      {saveState === "saved" ? (
-                        <Check size={12} />
-                      ) : saveState === "error" ? (
-                        <CloudOff size={13} />
-                      ) : (
-                        <span className="status-dot" />
-                      )}
-                      {saveState === "saved"
-                        ? ru.saved
-                        : saveState === "saving"
-                          ? ru.saving
-                          : saveState === "error"
-                            ? ru.saveError
-                            : saveState === "dirty"
-                              ? ru.unsaved
-                              : ru.draft}
-                    </button>
-                    <span className="action-divider" />
-                    <IconButton
-                      title={
-                        entry.favorite ? "Убрать из избранного" : ru.favorites
-                      }
-                      active={entry.favorite}
-                      onClick={() => void toggle("favorite", !entry.favorite)}
-                    >
-                      <Star
-                        size={17}
-                        fill={entry.favorite ? "currentColor" : "none"}
-                      />
-                    </IconButton>
-                  </>
-                )}
-                <button
-                  className={`icon-button ${prefs.keyboardVisible ? "active" : ""}`}
-                  title={ru.keyboardGuide}
-                  aria-label={ru.keyboardGuide}
-                  aria-expanded={!!prefs.keyboardVisible}
-                  aria-controls="keyboard-guide"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() =>
-                    updateKeyboard({ keyboardVisible: !prefs.keyboardVisible })
-                  }
-                >
-                  <Keyboard size={18} />
-                </button>
-                <IconButton
-                  title={focus ? ru.exitFocus : ru.focus}
-                  onClick={() => setFocus(!focus)}
-                >
-                  {focus ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
-                </IconButton>
-              </div>
-            </header>
-            {demo && <div className="demo-badge">{ru.demo}</div>}
-            {entry ? (
-              <div className="document-scroll">
-                <article className="document">
-                  <div className="document-date">
-                    <span className="date-dot" />
-                    <input
-                      type="date"
-                      aria-label="Дата записи"
-                      value={entry.date}
-                      disabled={entry.deleted}
-                      onChange={(e) => {
-                        if (e.target.value) update({ date: e.target.value });
-                      }}
-                    />
-                    <span>
-                      {new Date(entry.date + "T12:00:00").toLocaleDateString(
-                        "ru-RU",
-                        { weekday: "long" },
-                      )}
-                    </span>
-                  </div>
-                  <input
-                    className="title-input"
-                    spellCheck={false}
-                    aria-label="Название записи"
-                    placeholder={ru.titlePlaceholder}
-                    value={entry.title}
-                    maxLength={300}
-                    disabled={entry.deleted}
-                    onChange={(e) => update({ title: e.target.value })}
-                  />
-                  {entry.deleted && (
-                    <div className="trash-banner">
-                      {ru.trashBanner}
-                      <button onClick={() => void toggle("deleted", false)}>
-                        {ru.restoreEntry}
-                      </button>
-                    </div>
-                  )}
-                  <JournalEditor
-                    key={entry.id}
-                    document={entry.document}
-                    editable={!entry.deleted}
-                    onChange={(document) => update({ document })}
-                    onError={setError}
-                    onImport={(task) => {
-                      imports.current.add(task);
-                      void task.finally(() => imports.current.delete(task));
-                    }}
-                  />
-                  <div className="document-end">
-                    <span /> <Feather size={14} /> <span />
-                  </div>
-                </article>
-              </div>
-            ) : (
-              <div className="empty-canvas">
-                <div className="empty-mark">
-                  <Feather size={36} strokeWidth={1} />
-                </div>
-                <p className="eyebrow">ВАШЕ ЛИЧНОЕ ПРОСТРАНСТВО</p>
-                <h2>
-                  {query || date
-                    ? ru.emptySearch
-                    : filter === "trash"
-                      ? ru.emptyTrash
-                      : filter === "favorites"
-                        ? ru.emptyFavorites
-                        : ru.emptyTitle}
-                </h2>
-                <p>
-                  {query || date
-                    ? ru.emptySearchBody
-                    : filter === "trash"
-                      ? ru.emptyTrashBody
-                      : filter === "favorites"
-                        ? ru.emptyFavoritesBody
-                        : ru.emptyBody}
-                </p>
-                {filter === "all" && !query && !date && (
-                  <button
-                    className="primary"
-                    onClick={() => void createEntry()}
-                  >
-                    {ru.newEntry}
-                    <ArrowRight size={16} />
-                  </button>
-                )}
-              </div>
-            )}
-            <footer className="journal-footer">
-              <span>
-                <Lock size={12} />
-                {ru.private}
-              </span>
-              <div>
-                {entry && (
-                  <>
-                    <span>
-                      {wordCount(entry.document)} {ru.words}
-                    </span>
-                    {entry.revision > 0 && (
-                      <>
+          {mode === "planner" ? (
+            <Planner
+              ref={planner}
+              collapsed={!sidebar}
+              onExpand={() => setSidebar(true)}
+              onSettings={() => setModal("settings")}
+              onLock={() => void lock()}
+              onDiary={() => {
+                const ticket = epoch.current;
+                void flush()
+                  .then(() => {
+                    if (epoch.current === ticket) setMode("diary");
+                  })
+                  .catch((e) => setError(errorText(e)));
+              }}
+            />
+          ) : (
+            <>
+              <div className="entry-column">
+                <section className="entry-list">
+                  <header>
+                    <div>
+                      {!sidebar && (
                         <IconButton
-                          title={ru.export}
-                          onClick={() => setModal("export")}
+                          title={ru.expand}
+                          onClick={() => setSidebar(true)}
                         >
-                          <ArrowUpRight size={15} />
+                          <PanelLeftOpen size={17} />
                         </IconButton>
-                        {!entry.deleted && (
-                          <IconButton
-                            title={ru.delete}
-                            onClick={() => void toggle("deleted", true)}
-                          >
-                            <Trash2 size={15} />
-                          </IconButton>
+                      )}
+                      <div className="mode-tabs">
+                        <h1>{ru.journal}</h1>
+                        <button
+                          onClick={() => {
+                            const ticket = epoch.current;
+                            void flush()
+                              .then(() => {
+                                if (epoch.current === ticket) {
+                                  setFocus(false);
+                                  setMode("planner");
+                                }
+                              })
+                              .catch((e) => setError(errorText(e)));
+                          }}
+                        >
+                          Планер
+                        </button>
+                      </div>
+                    </div>
+                    <IconButton
+                      title={ru.newEntry}
+                      onClick={() => void createEntry()}
+                    >
+                      <Plus size={19} />
+                    </IconButton>
+                  </header>
+                  <div className="compact-nav">
+                    <select
+                      aria-label="Раздел дневника"
+                      value={filter}
+                      onChange={(e) => {
+                        setFilter(e.target.value);
+                        setQuery("");
+                        setDate("");
+                      }}
+                    >
+                      <option value="all">{ru.all}</option>
+                      <option value="favorites">{ru.favorites}</option>
+                      <option value="trash">{ru.trash}</option>
+                    </select>
+                    <IconButton title={ru.lock} onClick={() => void lock()}>
+                      <Lock size={15} />
+                    </IconButton>
+                  </div>
+                  <div className="search-box">
+                    <Search size={16} />
+                    <input
+                      id="search"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder={ru.search}
+                      aria-label={ru.search}
+                    />
+                    <kbd>Ctrl K</kbd>
+                  </div>
+                  <div className="list-filter">
+                    <span>{date ? dateLabel(date) : groupTitle}</span>
+                    <label className="calendar-button" title={ru.calendar}>
+                      <CalendarDays size={16} />
+                      <input
+                        type="date"
+                        value={date}
+                        onChange={(e) => setDate(e.target.value)}
+                        aria-label={ru.calendar}
+                      />
+                    </label>
+                    {date && (
+                      <IconButton
+                        title={ru.clearDate}
+                        onClick={() => setDate("")}
+                      >
+                        <X size={13} />
+                      </IconButton>
+                    )}
+                  </div>
+                  <EntryList
+                    rows={rows}
+                    currentId={entry?.id}
+                    onSelect={(id) => void navigate(id)}
+                    more={more}
+                    onMore={() => void task(loadMore)}
+                    scope={`${filter}/${query}/${date}`}
+                    empty={
+                      query
+                        ? ru.emptySearch
+                        : filter === "trash"
+                          ? ru.emptyTrash
+                          : filter === "favorites"
+                            ? ru.emptyFavorites
+                            : "Пока нет записей"
+                    }
+                  />
+                  <footer className="list-footer">
+                    <ShieldCheck size={13} />
+                    {ru.encrypted}
+                    <span>
+                      {rows.length}
+                      {more ? "+" : ""}
+                    </span>
+                  </footer>
+                </section>
+                {prefs.keyboardVisible && (
+                  <KeyboardGuide
+                    height={prefs.keyboardHeight ?? 190}
+                    width={Math.min(prefs.keyboardWidth ?? 360, 520)}
+                    onWidth={(keyboardWidth) =>
+                      updateKeyboard({ keyboardWidth })
+                    }
+                    onHeight={(keyboardHeight) =>
+                      updateKeyboard({ keyboardHeight })
+                    }
+                    onClose={() => updateKeyboard({ keyboardVisible: false })}
+                  />
+                )}
+              </div>
+              <main className="journal-main">
+                <header className="journal-top">
+                  <div className="breadcrumb">
+                    {focus && (
+                      <IconButton
+                        title={ru.exitFocus}
+                        onClick={() => setFocus(false)}
+                      >
+                        <Minimize2 size={16} />
+                      </IconButton>
+                    )}
+                    <BookOpen size={14} />
+                    <span>{ru.journal}</span>
+                    <ChevronRight size={12} />
+                    <span>{entry ? dateLabel(entry.date) : ru.tagline}</span>
+                  </div>
+                  <div className="journal-actions">
+                    {entry && (
+                      <>
+                        <button
+                          className={`save-indicator ${saveState}`}
+                          onClick={() =>
+                            void flush().catch((e) => setError(errorText(e)))
+                          }
+                          title={
+                            saveState === "error" ? ru.retry : ru.autosaveNote
+                          }
+                        >
+                          {saveState === "saved" ? (
+                            <Check size={12} />
+                          ) : saveState === "error" ? (
+                            <CloudOff size={13} />
+                          ) : (
+                            <span className="status-dot" />
+                          )}
+                          {saveState === "saved"
+                            ? ru.saved
+                            : saveState === "saving"
+                              ? ru.saving
+                              : saveState === "error"
+                                ? ru.saveError
+                                : saveState === "dirty"
+                                  ? ru.unsaved
+                                  : ru.draft}
+                        </button>
+                        <span className="action-divider" />
+                        <IconButton
+                          title={
+                            entry.favorite
+                              ? "Убрать из избранного"
+                              : ru.favorites
+                          }
+                          active={entry.favorite}
+                          onClick={() =>
+                            void toggle("favorite", !entry.favorite)
+                          }
+                        >
+                          <Star
+                            size={17}
+                            fill={entry.favorite ? "currentColor" : "none"}
+                          />
+                        </IconButton>
+                      </>
+                    )}
+                    <button
+                      className={`icon-button ${prefs.keyboardVisible ? "active" : ""}`}
+                      title={ru.keyboardGuide}
+                      aria-label={ru.keyboardGuide}
+                      aria-expanded={!!prefs.keyboardVisible}
+                      aria-controls="keyboard-guide"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() =>
+                        updateKeyboard({
+                          keyboardVisible: !prefs.keyboardVisible,
+                        })
+                      }
+                    >
+                      <Keyboard size={18} />
+                    </button>
+                    <IconButton
+                      title={focus ? ru.exitFocus : ru.focus}
+                      onClick={() => setFocus(!focus)}
+                    >
+                      {focus ? (
+                        <Minimize2 size={17} />
+                      ) : (
+                        <Maximize2 size={17} />
+                      )}
+                    </IconButton>
+                  </div>
+                </header>
+                {demo && <div className="demo-badge">{ru.demo}</div>}
+                {entry ? (
+                  <div className="document-scroll">
+                    <article className="document">
+                      <div className="document-date">
+                        <span className="date-dot" />
+                        <input
+                          type="date"
+                          aria-label="Дата записи"
+                          value={entry.date}
+                          disabled={entry.deleted}
+                          onChange={(e) => {
+                            if (e.target.value)
+                              update({ date: e.target.value });
+                          }}
+                        />
+                        <span>
+                          {new Date(
+                            entry.date + "T12:00:00",
+                          ).toLocaleDateString("ru-RU", { weekday: "long" })}
+                        </span>
+                      </div>
+                      <input
+                        className="title-input"
+                        spellCheck={false}
+                        aria-label="Название записи"
+                        placeholder={ru.titlePlaceholder}
+                        value={entry.title}
+                        maxLength={300}
+                        disabled={entry.deleted}
+                        onChange={(e) => update({ title: e.target.value })}
+                      />
+                      {entry.deleted && (
+                        <div className="trash-banner">
+                          {ru.trashBanner}
+                          <button onClick={() => void toggle("deleted", false)}>
+                            {ru.restoreEntry}
+                          </button>
+                        </div>
+                      )}
+                      <JournalEditor
+                        key={entry.id}
+                        document={entry.document}
+                        editable={!entry.deleted}
+                        onChange={(document) => update({ document })}
+                        onError={setError}
+                        onImport={(task) => {
+                          imports.current.add(task);
+                          void task.finally(() => imports.current.delete(task));
+                        }}
+                      />
+                      <div className="document-end">
+                        <span /> <Feather size={14} /> <span />
+                      </div>
+                    </article>
+                  </div>
+                ) : (
+                  <div className="empty-canvas">
+                    <div className="empty-mark">
+                      <Feather size={36} strokeWidth={1} />
+                    </div>
+                    <p className="eyebrow">ВАШЕ ЛИЧНОЕ ПРОСТРАНСТВО</p>
+                    <h2>
+                      {query || date
+                        ? ru.emptySearch
+                        : filter === "trash"
+                          ? ru.emptyTrash
+                          : filter === "favorites"
+                            ? ru.emptyFavorites
+                            : ru.emptyTitle}
+                    </h2>
+                    <p>
+                      {query || date
+                        ? ru.emptySearchBody
+                        : filter === "trash"
+                          ? ru.emptyTrashBody
+                          : filter === "favorites"
+                            ? ru.emptyFavoritesBody
+                            : ru.emptyBody}
+                    </p>
+                    {filter === "all" && !query && !date && (
+                      <button
+                        className="primary"
+                        onClick={() => void createEntry()}
+                      >
+                        {ru.newEntry}
+                        <ArrowRight size={16} />
+                      </button>
+                    )}
+                  </div>
+                )}
+                <footer className="journal-footer">
+                  <span>
+                    <Lock size={12} />
+                    {ru.private}
+                  </span>
+                  <div>
+                    {entry && (
+                      <>
+                        <span>
+                          {wordCount(entry.document)} {ru.words}
+                        </span>
+                        {entry.revision > 0 && (
+                          <>
+                            <IconButton
+                              title={ru.export}
+                              onClick={() => setModal("export")}
+                            >
+                              <ArrowUpRight size={15} />
+                            </IconButton>
+                            {!entry.deleted && (
+                              <IconButton
+                                title={ru.delete}
+                                onClick={() => void toggle("deleted", true)}
+                              >
+                                <Trash2 size={15} />
+                              </IconButton>
+                            )}
+                          </>
                         )}
                       </>
                     )}
-                  </>
-                )}
-                <IconButton
-                  title={ru.settings}
-                  onClick={() => setModal("settings")}
-                >
-                  <Ellipsis size={17} />
-                </IconButton>
-              </div>
-            </footer>
-          </main>
+                    <IconButton
+                      title={ru.settings}
+                      onClick={() => setModal("settings")}
+                    >
+                      <Ellipsis size={17} />
+                    </IconButton>
+                  </div>
+                </footer>
+              </main>
+            </>
+          )}
         </div>
       )}
       {stage === "journal" && error && (
@@ -1042,6 +1112,7 @@ export default function App() {
           onClose={() => setModal(null)}
           dismissOutside
         >
+          <PlannerSettings />
           <div className="settings-section">
             <h3>{ru.appearance}</h3>
             <label className="setting-row">
@@ -1124,7 +1195,7 @@ export default function App() {
               <ChevronRight size={16} />
             </button>
           </div>
-          <p className="version">not. studio · 0.1.7</p>
+          <p className="version">not. studio · 0.2.1</p>
         </Modal>
       )}
       {modal === "restore" && (
