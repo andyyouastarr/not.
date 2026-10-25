@@ -25,6 +25,8 @@ pub struct Task {
     pub title: String,
     pub document: Value,
     pub deadline: Option<String>,
+    #[serde(default)]
+    pub assignee_id: Option<String>,
     pub stage_id: Option<String>,
     pub position: i64,
     pub archived: bool,
@@ -39,9 +41,11 @@ pub struct Draft {
     pub title: String,
     pub document: Value,
     pub deadline: Option<String>,
+    #[serde(default)]
+    pub assignee_id: Option<String>,
     pub revision: i64,
 }
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Board {
     pub stages: Vec<Stage>,
@@ -79,6 +83,10 @@ pub enum Change {
 }
 pub fn schema(conn: &Connection) -> Result<()> {
     let tx = sql(conn.unchecked_transaction())?;
+    schema_in_transaction(&tx)?;
+    sql(tx.commit())
+}
+pub(crate) fn schema_in_transaction(tx: &Connection) -> Result<()> {
     sql(tx.execute_batch("CREATE TABLE planner_stages(id TEXT PRIMARY KEY,position INTEGER NOT NULL,payload TEXT NOT NULL);
 CREATE TABLE planner_tasks(id TEXT PRIMARY KEY,payload TEXT NOT NULL);
 CREATE TABLE planner_meta(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL,draft TEXT);
@@ -96,7 +104,7 @@ INSERT INTO planner_meta VALUES(1,0,NULL);"))?;
         ))?;
     }
     sql(tx.execute_batch("PRAGMA user_version=2;"))?;
-    sql(tx.commit())
+    Ok(())
 }
 fn decode<T: serde::de::DeserializeOwned>(s: String) -> Result<T> {
     serde_json::from_str(&s).map_err(|_| "Повреждены данные Планера".into())
@@ -107,7 +115,11 @@ fn rows<T: serde::de::DeserializeOwned>(conn: &Connection, query: &str) -> Resul
     raw.map(|r| decode(sql(r)?)).collect()
 }
 fn document(vault: &Vault, draft: &Draft, require_title: bool) -> Result<()> {
+    if !crate::task_links::fragments(&draft.document)?.is_empty() {
+        return Err("Связи разрешены только в дневнике".into());
+    }
     valid_id(&draft.id)?;
+    crate::assignees::validate_choice(&vault.conn, &draft.assignee_id, &None, true)?;
     if draft.title.chars().count() > 300
         || (require_title && draft.title.trim().is_empty())
         || draft.revision < 0
@@ -156,7 +168,7 @@ impl Vault {
             &self.conn,
             "SELECT payload FROM planner_stages ORDER BY position",
         )?;
-        let tasks = rows(&self.conn, "SELECT payload FROM planner_tasks ORDER BY id")?;
+        let tasks = rows(&self.conn, "SELECT json_set(t.payload,'$.assigneeId',a.assignee_id) FROM planner_tasks t LEFT JOIN planner_task_assignees a ON a.task_id=t.id ORDER BY t.id")?;
         let (revision, draft): (i64, Option<String>) = sql(self.conn.query_row(
             "SELECT revision,draft FROM planner_meta WHERE id=1",
             [],
@@ -200,6 +212,7 @@ impl Vault {
                     title: task.title.clone(),
                     document: task.document.clone(),
                     deadline: task.deadline.clone(),
+                    assignee_id: task.assignee_id.clone(),
                     revision: task.revision,
                 },
                 true,
@@ -218,6 +231,7 @@ impl Vault {
         // process cannot overwrite a revision read before it committed a change.
         let tx = sql(self.conn.unchecked_transaction())?;
         let mut board = self.planner()?;
+        let original = board.clone();
         let previous_tasks: std::collections::HashMap<_, _> = board
             .tasks
             .iter()
@@ -239,6 +253,17 @@ impl Vault {
         match change {
             Change::Save { draft } => {
                 document(self, &draft, true)?;
+                let previous = board
+                    .tasks
+                    .iter()
+                    .find(|t| t.id == draft.id)
+                    .and_then(|t| t.assignee_id.clone());
+                crate::assignees::validate_choice(
+                    &self.conn,
+                    &draft.assignee_id,
+                    &previous,
+                    false,
+                )?;
                 if board.tasks.iter().any(|t| t.id == draft.id) {
                     let t = task_mut(&mut board.tasks, &draft.id, draft.revision)?;
                     if t.deleted || t.archived {
@@ -247,6 +272,7 @@ impl Vault {
                     t.title = draft.title.trim().into();
                     t.document = draft.document;
                     t.deadline = draft.deadline;
+                    t.assignee_id = draft.assignee_id;
                     touch(t);
                 } else {
                     if draft.revision != 0 {
@@ -258,6 +284,7 @@ impl Vault {
                         title: draft.title.trim().into(),
                         document: draft.document,
                         deadline: draft.deadline,
+                        assignee_id: draft.assignee_id,
                         stage_id: None,
                         position,
                         archived: false,
@@ -375,6 +402,20 @@ impl Vault {
             Change::Draft { .. } => unreachable!(),
         }
         if stages_changed {
+            for task in &mut board.tasks {
+                let old = original.tasks.iter().find(|t| t.id == task.id).unwrap();
+                let was_completed = original
+                    .stages
+                    .iter()
+                    .any(|s| Some(&s.id) == old.stage_id.as_ref() && s.completed);
+                let is_completed = board
+                    .stages
+                    .iter()
+                    .any(|s| Some(&s.id) == task.stage_id.as_ref() && s.completed);
+                if was_completed != is_completed && task.revision == old.revision {
+                    touch(task);
+                }
+            }
             sql(tx.execute("DELETE FROM planner_stages", []))?;
             for (i, s) in board.stages.iter().enumerate() {
                 sql(tx.execute(
@@ -388,8 +429,9 @@ impl Vault {
             .iter()
             .filter(|t| previous_tasks.get(&t.id) != Some(&t.revision))
         {
-            sql(tx.execute("INSERT INTO planner_tasks VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", params![t.id, serde_json::to_string(t).unwrap()]))?;
+            sql(tx.execute("INSERT INTO planner_tasks VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", params![t.id, crate::assignees::stored_task(t)]))?;
         }
+        crate::assignees::record_changes(&tx, &original, &board, stages_changed)?;
         board.revision += 1;
         sql(tx.execute(
             "UPDATE planner_meta SET revision=?,draft=? WHERE id=1",
@@ -416,6 +458,7 @@ mod tests {
             title: title.into(),
             document: json!({"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"PlannerSecretMarker 🔒"}]}]}),
             deadline: Some("2026-12-31".into()),
+            assignee_id: None,
             revision: 0,
         }
     }
@@ -541,7 +584,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("vault");
         let (v, key) = Vault::create(&root, "planner test password").unwrap();
-        v.conn.execute_batch("DROP TABLE planner_tasks; DROP TABLE planner_stages; DROP TABLE planner_meta; PRAGMA user_version=1;").unwrap();
+        v.conn.execute_batch("DROP TABLE planner_task_events; DROP TABLE planner_task_assignees; DROP TABLE planner_assignees; DROP TABLE task_links; DROP TABLE planner_tasks; DROP TABLE planner_stages; DROP TABLE planner_meta; PRAGMA user_version=1;").unwrap();
         let old = dir.path().join("old.notbackup");
         v.backup(&old).unwrap();
         drop(v);
@@ -552,7 +595,7 @@ mod tests {
                 .conn
                 .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            2
+            4
         );
         assert!(std::fs::read_dir(dir.path().join("migration-backups"))
             .unwrap()

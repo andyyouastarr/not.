@@ -9,6 +9,11 @@ import assert from "node:assert/strict";
 const root = process.cwd();
 const profile = path.join(root, "artifacts", `native-test-${Date.now()}`);
 await mkdir(profile, { recursive: true });
+if (process.env.NOT_STUDIO_TEST_THEME === "light")
+  await writeFile(
+    path.join(profile, "appearance.json"),
+    JSON.stringify({ theme: "light" }),
+  );
 const exe = path.join(root, "src-tauri/target/debug/not-studio.exe");
 const imageFixture = process.env.NOT_STUDIO_TEST_ATTACHMENT;
 const keyboardTest = process.env.NOT_STUDIO_TEST_KEYBOARD === "1";
@@ -210,15 +215,13 @@ try {
       const blob = await new Promise((resolve) => canvas.toBlob(resolve));
       const data = new DataTransfer();
       data.items.add(new File([blob], "delayed.png", { type: "image/png" }));
-      document
-        .querySelector(".tiptap")
-        .dispatchEvent(
-          new ClipboardEvent("paste", {
-            bubbles: true,
-            cancelable: true,
-            clipboardData: data,
-          }),
-        );
+      document.querySelector(".tiptap").dispatchEvent(
+        new ClipboardEvent("paste", {
+          bubbles: true,
+          cancelable: true,
+          clipboardData: data,
+        }),
+      );
       await window.__TAURI_INTERNALS__.invoke("plugin:event|emit", {
         event: "vault-lock-request",
         payload: null,

@@ -40,6 +40,8 @@ import AttachmentView from "./AttachmentView";
 import { HighlightMark, HighlightTools } from "./Highlight";
 import { externalUrl, openLink } from "./links";
 import { importImage, clipboardFiles } from "./pasteImage";
+import { taskLinkExtension, type DiaryLinkActions } from "./taskLinks";
+import { useDiaryTaskMenu, UnlinkConfirmation } from "./DiaryTaskMenu";
 
 function imageDropTarget(view: EditorView, x: number, y: number) {
   const coords = view.posAtCoords({ left: x, top: y });
@@ -147,6 +149,8 @@ function moveBlock(editor: EditorType, direction: number) {
   editor.view.focus();
 }
 type Props = {
+  diaryLinks?: DiaryLinkActions;
+  onReady?: (editor: EditorType) => void;
   document: JSONContent;
   editable: boolean;
   onChange: (v: JSONContent) => void;
@@ -159,7 +163,15 @@ export default function JournalEditor({
   onChange,
   onError,
   onImport,
+  diaryLinks,
+  onReady,
 }: Props) {
+  const linkActions = useRef(diaryLinks);
+  linkActions.current = diaryLinks;
+  const [unlink, setUnlink] = useState<{
+    transaction: import("@tiptap/pm/state").Transaction;
+    count: number;
+  } | null>(null);
   const [pasting, setPasting] = useState(0);
   const [menu, setMenu] = useState(false),
     [slash, setSlash] = useState(false),
@@ -229,6 +241,10 @@ export default function JournalEditor({
   };
   const editor = useEditor({
     extensions: [
+      taskLinkExtension({
+        actions: () => linkActions.current,
+        confirm: (transaction, count) => setUnlink({ transaction, count }),
+      }),
       Extension.create({
         name: "blockMovement",
         addKeyboardShortcuts() {
@@ -482,8 +498,15 @@ export default function JournalEditor({
     },
   });
   useEffect(() => {
-    editor?.setEditable(editable);
+    editor?.setEditable(editable, false);
   }, [editor, editable]);
+  useDiaryTaskMenu(editor, diaryLinks, onError);
+  useEffect(() => {
+    if (editor) onReady?.(editor);
+  }, [editor]);
+  useEffect(() => {
+    if (editor && !editor.isDestroyed) editor.view.dispatch(editor.state.tr);
+  }, [editor, diaryLinks?.links]);
   if (!editor) return null;
   const prepare = () => {
     if (slash) {
@@ -580,6 +603,13 @@ export default function JournalEditor({
   ];
   return (
     <div className="editor-shell">
+      {unlink && (
+        <UnlinkConfirmation
+          editor={editor}
+          pending={unlink}
+          close={() => setUnlink(null)}
+        />
+      )}
       {pasting > 0 && (
         <div className="paste-status" role="status">
           {ru.imagePasting}

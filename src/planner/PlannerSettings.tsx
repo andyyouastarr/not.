@@ -1,3 +1,4 @@
+import AssigneeSettings from "./AssigneeSettings";
 import { useEffect, useState } from "react";
 import { api, errorText } from "../api";
 import type { Board, Stage } from "./types";
@@ -183,6 +184,7 @@ export default function PlannerSettings() {
           </div>
         )}
       </fieldset>
+      <AssigneeSettings />
     </section>
   );
 }

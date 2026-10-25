@@ -1,3 +1,6 @@
+export interface AppearancePreferences {
+  theme: "dark" | "light";
+}
 import type { JSONContent } from "@tiptap/react";
 export interface Entry {
   id: string;
@@ -39,6 +42,23 @@ export type SaveEntry = Pick<
   "id" | "date" | "title" | "document" | "revision"
 >;
 export interface Commands {
+  appearance: [{}, AppearancePreferences];
+  setAppearance: [{ value: AppearancePreferences }, AppearancePreferences];
+  appearanceReady: [{}, boolean];
+  taskLinks: [{}, import("./taskLinks").TaskLink[]];
+  createLinkedTask: [
+    { entry: SaveEntry; fragment: string; operation: string },
+    { entry: Entry; task: import("./planner/types").Task },
+  ];
+  undoLinkedTask: [
+    { entry: SaveEntry; fragment: string; revision: number },
+    Entry,
+  ];
+  assignees: [{}, import("./planner/types").Assignee[]];
+  assigneeChange: [
+    { change: import("./planner/types").AssigneeChange },
+    import("./planner/types").Assignee[],
+  ];
   planner: [{}, import("./planner/types").Board];
   plannerChange: [
     { change: import("./planner/types").Change },

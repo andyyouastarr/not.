@@ -1,0 +1,105 @@
+/* Theme changes are paint-only. Dark declarations keep their original fallback values. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --scheme: light;
+  --bg: #eeeff3;
+  --page: #fcfcfd;
+  --panel: #f5f5f8;
+  --text: #111113;
+  --muted: #50515b;
+  --faint: #686975;
+  --accent: #69528f;
+  --line: rgba(17, 17, 19, 0.12);
+  --shadow: 0 20px 80px rgba(48, 40, 66, 0.12);
+  --surface-control: #fafafd;
+  --ink-tertiary: #686975;
+  --ink-primary: #111113;
+  --ink-base: #111113;
+  --scrollbar-thumb: rgba(54, 47, 68, 0.25);
+  --glass-start: rgba(255, 255, 255, 0.76);
+  --glass-end: rgba(240, 238, 247, 0.84);
+  --surface-hover: rgba(42, 30, 60, 0.045);
+  --accent-wash: rgba(128, 102, 164, 0.1);
+  --button-primary: #ded5ef;
+  --surface-glint: rgba(255, 255, 255, 0.8);
+  --button-primary-hover: #d2c5e7;
+  --edge-soft: rgba(17, 17, 19, 0.12);
+  --surface-wash: rgba(42, 30, 60, 0.045);
+  --ink-secondary: #50515b;
+  --surface-navigation: rgba(242, 241, 248, 0.72);
+  --ink-accent: #69528f;
+  --accent-solid: #8970ab;
+  --surface-timeline: rgba(247, 247, 250, 0.86);
+  --key-zone-1: #e9d8e6;
+  --key-zone-2: #d5e1ef;
+  --key-zone-3: #d6e9e0;
+  --key-zone-4: #efe0ce;
+  --key-zone-5: #ece7c9;
+  --key-zone-6: #d1e7e8;
+  --key-zone-7: #d9e1f0;
+  --key-zone-8: #e5d9ef;
+  --ink-success: #316448;
+  --ink-danger: #9b263b;
+  --marker-lavender: #e4d9f4;
+  --marker-yellow: #f4e3ad;
+  --marker-green: #c9e8d7;
+  --marker-pink: #efd2df;
+  --surface-code: #f0eff4;
+  --surface-modal: rgba(250, 249, 253, 0.97);
+  --surface-welcome-glow: rgba(188, 173, 211, 0.18);
+  --surface-welcome: #f0eef5;
+  --surface-orb: rgba(205, 194, 222, 0.22);
+  --shadow-tint: rgba(48, 40, 66, 0.12);
+  --edge-accent: #8970ab;
+  --surface-danger: #f8e9ed;
+  --backdrop-tint: rgba(37, 32, 48, 0.22);
+  --surface-toast: rgba(250, 249, 253, 0.98);
+  --surface-opaque: #f5f5f8;
+  --surface-board: #eeeff3;
+  --surface-card: #fcfcfd;
+  --selection-fill: #d9cbea;
+}
+
+.appearance-setting select {
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  font: inherit;
+}
+:root[data-theme="light"] .glass {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 8px 32px rgba(48, 40, 66, 0.06);
+}
+:root[data-theme="light"] .modal {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 35px 100px rgba(48, 40, 66, 0.17);
+}
+:root[data-theme="light"] .journal-prose blockquote {
+  color: var(--ink-secondary);
+}
+:root[data-theme="light"] .guide-key small,
+:root[data-theme="light"] .guide-key.zone-0 {
+  color: var(--ink-secondary);
+}
+:root[data-theme="light"] .planner-error,
+:root[data-theme="light"] [role="alert"] {
+  color: var(--ink-danger);
+}
+:root[data-theme="light"] ::selection {
+  background: var(--selection-fill);
+  color: var(--text);
+}
+:root[data-theme="light"] .journal-prose .selectedCell::after {
+  background: rgba(137, 112, 171, 0.2);
+}
+:root[data-theme="light"] .planner-heading > button,
+:root[data-theme="light"] .planner-recovery button {
+  color: var(--ink-accent);
+}
+:root[data-theme="light"] .planner-card-open > span {
+  color: var(--ink-secondary);
+}

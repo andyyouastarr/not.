@@ -33,12 +33,15 @@ import { api, demo, native, errorText, localDate } from "./api";
 import { ru } from "./ru";
 import JournalEditor, { hasContent, wordCount } from "./Editor";
 import IdleLockSettings from "./IdleLockSettings";
+import { AppearanceSettings } from "./appearance";
 import { SaveQueue } from "./saveQueue";
 import type { SaveState } from "./saveQueue";
 import EntryList from "./EntryList";
 import KeyboardGuide from "./KeyboardGuide";
 import Planner, { type PlannerHandle } from "./planner/Planner";
 import PlannerSettings from "./planner/PlannerSettings";
+import { useLinkedTasks } from "./useLinkedTasks";
+import type { TaskLink } from "./taskLinks";
 
 function IconButton({
   title,
@@ -148,6 +151,7 @@ function blank(): Entry {
 
 export default function App() {
   const [mode, setMode] = useState<"diary" | "planner">("diary");
+  const [sourceJump, setSourceJump] = useState<TaskLink | null>(null);
   const planner = useRef<PlannerHandle>(null);
   const [stage, setStage] = useState<
     "loading" | "create" | "locked" | "recovery" | "journal"
@@ -234,7 +238,7 @@ export default function App() {
         void refresh().catch((e) => setError(errorText(e)));
       },
     );
-  const flush = useCallback(async () => {
+  const flushDiary = useCallback(async () => {
     const currentEpoch = epoch.current;
     while (imports.current.size) await Promise.all([...imports.current]);
     if (currentEpoch !== epoch.current) return;
@@ -247,6 +251,65 @@ export default function App() {
     setEntry(e);
     queue.current!.reset(e);
   }, []);
+  const jumpToSource = async (source: TaskLink) => {
+    const currentEpoch = epoch.current;
+    await flushDiary();
+    const target = await api("get", { id: source.entryId });
+    if (currentEpoch !== epoch.current) return;
+    setMode("diary");
+    setFilter(target.deleted ? "trash" : "all");
+    showEntry(target);
+    setSourceJump(source);
+  };
+  const linked = useLinkedTasks({
+    entry,
+    active: stage === "journal" && mode === "diary",
+    epoch,
+    getEntry: () => entryRef.current,
+    flushDiary,
+    apply: showEntry,
+    refresh,
+    error: setError,
+    jump: jumpToSource,
+  });
+  useEffect(() => {
+    if (!sourceJump || !entry || stage !== "journal") return;
+    const frame = requestAnimationFrame(() => {
+      const icon = document.querySelector<HTMLElement>(
+        `[data-fragment="${sourceJump.fragmentId}"]`,
+      );
+      if (!icon) return;
+      icon?.scrollIntoView({
+        block: "center",
+        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "instant"
+          : "smooth",
+      });
+      icon?.focus({ preventScroll: true });
+      if (icon && !matchMedia("(prefers-reduced-motion: reduce)").matches)
+        document
+          .querySelectorAll<HTMLElement>(
+            `[data-task-fragment="${sourceJump.fragmentId}"]`,
+          )
+          .forEach((span) =>
+            span.animate(
+              [
+                { backgroundColor: "#a896d944" },
+                { backgroundColor: "transparent" },
+              ],
+              { duration: 1400 },
+            ),
+          );
+      setSourceJump(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [sourceJump, entry?.id, stage, linked.actions.links]);
+  const linkedFlush = useRef(linked.flush);
+  linkedFlush.current = linked.flush;
+  const flush = useCallback(async () => {
+    await linkedFlush.current();
+    await flushDiary();
+  }, [flushDiary]);
   const clear = useCallback(() => {
     imports.current.clear();
     epoch.current++;
@@ -263,6 +326,7 @@ export default function App() {
     setRecoveryKey("");
     setError("");
     setNotice("");
+    setSourceJump(null);
     setStage("locked");
     setMode("diary");
   }, []);
@@ -720,6 +784,7 @@ export default function App() {
           </aside>
           {mode === "planner" ? (
             <Planner
+              onSource={jumpToSource}
               ref={planner}
               collapsed={!sidebar}
               onExpand={() => setSidebar(true)}
@@ -964,7 +1029,7 @@ export default function App() {
                           type="date"
                           aria-label="Дата записи"
                           value={entry.date}
-                          disabled={entry.deleted}
+                          disabled={entry.deleted || linked.busy}
                           onChange={(e) => {
                             if (e.target.value)
                               update({ date: e.target.value });
@@ -983,7 +1048,7 @@ export default function App() {
                         placeholder={ru.titlePlaceholder}
                         value={entry.title}
                         maxLength={300}
-                        disabled={entry.deleted}
+                        disabled={entry.deleted || linked.busy}
                         onChange={(e) => update({ title: e.target.value })}
                       />
                       {entry.deleted && (
@@ -995,9 +1060,11 @@ export default function App() {
                         </div>
                       )}
                       <JournalEditor
+                        diaryLinks={linked.actions}
+                        onReady={linked.ready}
                         key={entry.id}
                         document={entry.document}
-                        editable={!entry.deleted}
+                        editable={!entry.deleted && !linked.busy}
                         onChange={(document) => update({ document })}
                         onError={setError}
                         onImport={(task) => {
@@ -1097,6 +1164,7 @@ export default function App() {
           </button>
         </div>
       )}
+      {linked.ui}
       {notice && (
         <div className="toast" role="status">
           <Check size={16} />
@@ -1115,6 +1183,7 @@ export default function App() {
           <PlannerSettings />
           <div className="settings-section">
             <h3>{ru.appearance}</h3>
+            <AppearanceSettings />
             <label className="setting-row">
               <div>
                 <strong>{ru.opaque}</strong>
@@ -1195,7 +1264,7 @@ export default function App() {
               <ChevronRight size={16} />
             </button>
           </div>
-          <p className="version">not. studio · 0.2.1</p>
+          <p className="version">not. studio · 0.5.0</p>
         </Modal>
       )}
       {modal === "restore" && (

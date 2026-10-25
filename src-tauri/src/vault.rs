@@ -86,7 +86,7 @@ pub struct Summary {
     pub deleted: bool,
     pub updated_at: String,
 }
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveEntry {
     pub id: String,
@@ -245,6 +245,7 @@ pub fn validate_document(doc: &Value) -> Result<Vec<String>> {
                     "underline",
                     "link",
                     "highlight",
+                    "taskLink",
                 ]
                 .contains(&t)
                 {
@@ -322,6 +323,8 @@ impl Vault {
         let conn = connect(&staging.path().join(DB), &master)?;
         schema(&conn)?;
         crate::planner::schema(&conn)?;
+        crate::task_links::schema(&conn)?;
+        crate::assignees::schema(&conn)?;
         sql(conn.execute(
             "INSERT INTO settings(key,value) VALUES('pending_recovery',?)",
             [&recovery],
@@ -349,7 +352,7 @@ impl Vault {
         let master = crypto::unlock(&manifest, credential, recovery)?;
         let conn = connect(&root.join(DB), &master)?;
         let version: i64 = sql(conn.query_row("PRAGMA user_version", [], |r| r.get(0)))?;
-        if version != 1 && version != 2 {
+        if !(1..=4).contains(&version) {
             return Err("Версия базы не поддерживается. Обновите приложение.".into());
         }
         let vault = Self {
@@ -358,7 +361,7 @@ impl Vault {
             master,
             manifest,
         };
-        if version == 1 {
+        if version < 4 {
             let folder = root
                 .parent()
                 .ok_or("Неверный путь")?
@@ -374,11 +377,25 @@ impl Vault {
                 let mut member = archive.by_index(i).map_err(|_| "Ошибка проверки копии")?;
                 io(std::io::copy(&mut member, &mut std::io::sink()))?;
             }
-            crate::planner::schema(&vault.conn)?;
+            let tx = sql(vault.conn.unchecked_transaction())?;
+            if version == 1 {
+                crate::planner::schema_in_transaction(&tx)?;
+            }
+            if version < 3 {
+                crate::task_links::schema_in_transaction(&tx)?;
+            }
+            crate::assignees::schema(&tx)?;
+            sql(tx.commit())?;
         }
         Ok(vault)
     }
     pub fn save(&mut self, e: SaveEntry) -> Result<Entry> {
+        let tx = sql(self.conn.unchecked_transaction())?;
+        let saved = self.save_in_transaction(e)?;
+        sql(tx.commit())?;
+        Ok(saved)
+    }
+    pub(crate) fn save_in_transaction(&self, e: SaveEntry) -> Result<Entry> {
         valid_id(&e.id)?;
         chrono::NaiveDate::parse_from_str(&e.date, "%Y-%m-%d").map_err(|_| "Неверная дата")?;
         if e.title.chars().count() > 300 {
@@ -401,7 +418,7 @@ impl Vault {
             return Err("Пустая запись не сохраняется".into());
         }
         let now = Utc::now().to_rfc3339();
-        let tx = sql(self.conn.transaction())?;
+        let tx = &self.conn;
         let old: Option<(i64, bool)> = sql(tx
             .query_row(
                 "SELECT revision,deleted FROM entries WHERE id=?",
@@ -418,7 +435,7 @@ impl Vault {
             "INSERT INTO entry_fts(id,title,text) VALUES(?,?,?)",
             params![e.id, e.title, text],
         ))?;
-        sql(tx.commit())?;
+        crate::task_links::sync(tx, &e.id, &e.document)?;
         self.get(&e.id)
     }
     pub fn get(&self, id: &str) -> Result<Entry> {
@@ -803,6 +820,8 @@ impl Vault {
         }
         drop(stmt);
         vault.validate_planner()?;
+        vault.validate_assignees()?;
+        vault.validate_task_links()?;
         drop(vault);
         rename_directory(staging.path(), destination)?;
         Self::open(destination, credential, recovery)

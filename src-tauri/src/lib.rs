@@ -1,4 +1,7 @@
+mod appearance;
+mod assignees;
 mod clipboard;
+mod context_menu;
 mod crypto;
 mod export;
 mod idle;
@@ -6,6 +9,7 @@ mod keyboard;
 mod links;
 mod planner;
 mod session;
+mod task_links;
 mod vault;
 use crypto::Result;
 use serde::Deserialize;
@@ -30,6 +34,26 @@ type Shared = Arc<Mutex<State>>;
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 enum Request {
+    Appearance,
+    SetAppearance {
+        value: appearance::Preferences,
+    },
+    AppearanceReady,
+    TaskLinks,
+    CreateLinkedTask {
+        entry: vault::SaveEntry,
+        fragment: String,
+        operation: String,
+    },
+    UndoLinkedTask {
+        entry: vault::SaveEntry,
+        fragment: String,
+        revision: i64,
+    },
+    Assignees,
+    AssigneeChange {
+        change: assignees::Change,
+    },
     Planner,
     PlannerChange {
         change: planner::Change,
@@ -113,6 +137,39 @@ async fn dispatch(
         .map_err(|_| "Операция прервана")?
 }
 fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Value> {
+    if matches!(
+        &request,
+        Request::Appearance | Request::SetAppearance { .. } | Request::AppearanceReady
+    ) {
+        let state = state
+            .lock()
+            .map_err(|_| "Настройки оформления недоступны")?;
+        let root = state.root.parent().ok_or("Каталог оформления недоступен")?;
+        let window = app
+            .get_webview_window("main")
+            .ok_or("Окно приложения недоступно")?;
+        return match request {
+            Request::Appearance => Ok(json!(appearance::read(root))),
+            Request::SetAppearance { value } => {
+                let previous = appearance::read(root);
+                if let Err(e) = appearance::apply(&window, value) {
+                    let _ = appearance::apply(&window, previous);
+                    return Err(e.to_string());
+                }
+                if let Err(e) = appearance::save(root, value) {
+                    let _ = appearance::apply(&window, previous);
+                    return Err(e);
+                }
+                Ok(json!(value))
+            }
+            Request::AppearanceReady => {
+                window.show().map_err(|e| e.to_string())?;
+                Ok(json!(true))
+            }
+            _ => unreachable!(),
+        };
+    }
+
     if matches!(&request, Request::ClipboardImageFiles) {
         if state
             .lock()
@@ -303,7 +360,20 @@ fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Valu
             Ok(json!(true))
         }
         Request::PendingRecovery => Ok(json!(v.pending_recovery()?)),
+        Request::Assignees => Ok(json!(v.assignees()?)),
+        Request::AssigneeChange { change } => Ok(json!(v.assignee_change(change)?)),
         Request::Planner => Ok(json!(v.planner()?)),
+        Request::TaskLinks => Ok(json!(v.task_links()?)),
+        Request::CreateLinkedTask {
+            entry,
+            fragment,
+            operation,
+        } => Ok(json!(v.create_linked_task(entry, fragment, operation)?)),
+        Request::UndoLinkedTask {
+            entry,
+            fragment,
+            revision,
+        } => Ok(json!(v.undo_linked_task(entry, fragment, revision)?)),
         Request::PlannerChange { change } => Ok(json!(v.planner_change(change)?)),
         Request::List {
             query,
@@ -316,6 +386,9 @@ fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Valu
         Request::Toggle { id, field, value } => {
             v.toggle(&id, &field, value)?;
             Ok(json!(true))
+        }
+        Request::Appearance | Request::SetAppearance { .. } | Request::AppearanceReady => {
+            unreachable!()
         }
         Request::Settings => v.settings(),
         Request::SetSettings { value } => {
@@ -466,6 +539,10 @@ pub fn run() {
             #[cfg(debug_assertions)]
             eprintln!("not: vault service ready");
             let handle = app.handle().clone();
+            if let Some(window) = app.get_webview_window("main") {
+                appearance::apply(&window, appearance::read(&data))?;
+                context_menu::install(&window)?;
+            }
             std::thread::spawn(move || loop {
                 std::thread::sleep(Duration::from_secs(1));
                 let Ok(mut s) = shared.try_lock() else {

@@ -6,6 +6,11 @@ import assert from "node:assert/strict";
 const root = process.cwd();
 const profile = path.join(root, "artifacts", `planner-native-${Date.now()}`);
 await mkdir(profile, { recursive: true });
+if (process.env.NOT_STUDIO_TEST_THEME === "light")
+  await writeFile(
+    path.join(profile, "appearance.json"),
+    JSON.stringify({ theme: "light" }),
+  );
 let child, browser, page;
 const errors = [];
 async function launch() {

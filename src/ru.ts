@@ -1,4 +1,8 @@
 export const ru = {
+  theme: "Тема",
+  themeDetail: "Оформление приложения и экрана входа",
+  themeDark: "Тёмная",
+  themeLight: "Светлая",
   highlight: "Маркер текста",
   highlightHint: "Выделите текст и выберите цвет маркера",
   highlightColors: "Цвет маркера",

@@ -9,6 +9,7 @@ export interface Draft {
   title: string;
   document: JSONContent;
   deadline: string | null;
+  assigneeId: string | null;
   revision: number;
 }
 export interface Task extends Draft {
@@ -58,6 +59,7 @@ export function newDraft(): Draft {
     title: "",
     document: emptyDocument(),
     deadline: null,
+    assigneeId: null,
     revision: 0,
   };
 }
@@ -66,3 +68,16 @@ export function excerpt(node: JSONContent): string {
     .join(" ")
     .trim();
 }
+
+export interface Assignee {
+  id: string;
+  name: string;
+  archived: boolean;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+export type AssigneeChange =
+  | { action: "create"; id: string; name: string }
+  | { action: "rename"; id: string; revision: number; name: string }
+  | { action: "archive"; id: string; revision: number; archived: boolean };

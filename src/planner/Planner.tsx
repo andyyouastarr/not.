@@ -15,12 +15,14 @@ import type { Board, Change, Draft, Task } from "./types";
 import { excerpt, newDraft } from "./types";
 import TaskDialog, { type TaskDialogHandle } from "./TaskDialog";
 import "./planner.css";
+import { useAssignees } from "./AssigneeSettings";
 
 export interface PlannerHandle {
   flush: () => Promise<void>;
   create: () => void;
 }
 type Props = {
+  onSource: (source: import("../taskLinks").TaskLink) => Promise<void>;
   onDiary: () => void;
   onSettings: () => void;
   onLock: () => void;
@@ -28,9 +30,11 @@ type Props = {
   collapsed: boolean;
 };
 export default forwardRef<PlannerHandle, Props>(function Planner(
-  { onDiary, onSettings, onLock, onExpand, collapsed },
+  { onDiary, onSettings, onLock, onExpand, collapsed, onSource },
   ref,
 ) {
+  const { items: assignees, error: assigneeError } = useAssignees();
+  const assigneeNames = new Map(assignees.map((a) => [a.id, a.name]));
   const [board, setBoard] = useState<Board | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -176,6 +180,7 @@ export default forwardRef<PlannerHandle, Props>(function Planner(
       title: task.title,
       document: task.document,
       deadline: task.deadline,
+      assigneeId: task.assigneeId ?? null,
       revision: task.revision,
     });
   };
@@ -299,6 +304,14 @@ export default forwardRef<PlannerHandle, Props>(function Planner(
         >
           <strong>{task.title}</strong>
           <span>{excerpt(task.document).slice(0, 140)}</span>
+          {task.assigneeId && (
+            <small
+              className="task-assignee"
+              title={assigneeNames.get(task.assigneeId)}
+            >
+              {assigneeNames.get(task.assigneeId) || assigneeError || "..."}
+            </small>
+          )}
           {task.deadline && (
             <time
               className={!completed && task.deadline < today ? "overdue" : ""}
@@ -591,6 +604,10 @@ export default forwardRef<PlannerHandle, Props>(function Planner(
           initial={editing}
           recovered={recovered}
           readOnly={readOnly}
+          onSource={async (source) => {
+            await editor.current?.flush();
+            await onSource(source);
+          }}
           onSaved={(b) => {
             setBoard(b);
             setEditing(null);

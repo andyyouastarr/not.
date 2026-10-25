@@ -1,7 +1,11 @@
 // Development-only, opt-in preview. No persistence, encryption claims, or production fallback.
 import type { Commands, Entry, Preferences, Summary } from "./types";
 import { localDate } from "./api";
+import { assigneePreview } from "./planner/assigneeDemo";
 import { preview } from "./planner/demo";
+import type { TaskLink } from "./taskLinks";
+let appearance: import("./types").AppearancePreferences = { theme: "dark" };
+const taskLinks: TaskLink[] = [];
 let preferences: Preferences = {
   opaque: false,
   lastEntry: "demo-1",
@@ -82,6 +86,78 @@ export async function mock<K extends keyof Commands>(
   const a = args as Record<string, unknown>;
   let result: unknown = true;
   switch (type) {
+    case "appearance":
+      result = appearance;
+      break;
+    case "setAppearance":
+      appearance = (args as Commands["setAppearance"][0]).value;
+      result = appearance;
+      break;
+    case "appearanceReady":
+      result = true;
+      break;
+    case "taskLinks":
+      result = taskLinks;
+      break;
+    case "createLinkedTask": {
+      const { entry, fragment } = args as Commands["createLinkedTask"][0];
+      let title = "";
+      const walk = (node: Entry["document"]) => {
+        if (
+          node.marks?.some(
+            (m) => m.type === "taskLink" && m.attrs?.fragmentId === fragment,
+          )
+        )
+          title += node.text || "";
+        node.content?.forEach(walk);
+        if (node.content || node.type === "hardBreak") title += " ";
+      };
+      walk(entry.document);
+      const oldDraft = preview().draft;
+      const id = crypto.randomUUID();
+      const board = preview({
+        action: "save",
+        draft: {
+          id,
+          title: title.replace(/\s+/gu, " ").trim(),
+          document: { type: "doc", content: [{ type: "paragraph" }] },
+          deadline: null,
+          assigneeId: null,
+          revision: 0,
+        },
+      });
+      if (oldDraft) preview({ action: "draft", draft: oldDraft });
+      const task = board.tasks.find((t) => t.id === id)!;
+      taskLinks.push({
+        entryId: entry.id,
+        fragmentId: fragment,
+        taskId: id,
+        active: true,
+      });
+      result = { task, entry: await mock("save", { entry }) };
+      break;
+    }
+    case "undoLinkedTask": {
+      const { entry, fragment, revision } =
+        args as Commands["undoLinkedTask"][0];
+      const link = taskLinks.find((l) => l.fragmentId === fragment)!;
+      preview({
+        action: "flag",
+        id: link.taskId,
+        revision,
+        field: "deleted",
+        value: true,
+      });
+      taskLinks.splice(taskLinks.indexOf(link), 1);
+      result = await mock("save", { entry });
+      break;
+    }
+    case "assignees":
+      result = assigneePreview();
+      break;
+    case "assigneeChange":
+      result = assigneePreview((args as Commands["assigneeChange"][0]).change);
+      break;
     case "planner":
       result = preview();
       break;
@@ -137,6 +213,15 @@ export async function mock<K extends keyof Commands>(
         revision: (old?.revision || 0) + 1,
       };
       entries = [...entries.filter((v) => v.id !== e.id), result as Entry];
+      const marked = (node: Entry["document"], id: string): boolean =>
+        !!node.marks?.some(
+          (m) => m.type === "taskLink" && m.attrs?.fragmentId === id,
+        ) || !!node.content?.some((n) => marked(n, id));
+      taskLinks
+        .filter((l) => l.entryId === e.id)
+        .forEach((l) => {
+          l.active = marked(e.document, l.fragmentId);
+        });
       break;
     }
     case "toggle":

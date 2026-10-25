@@ -8,6 +8,8 @@ import {
 import JournalEditor from "../Editor";
 import { api, errorText } from "../api";
 import type { Board, Draft } from "./types";
+import type { TaskLink } from "../taskLinks";
+import { AssigneeDialog, useAssignees } from "./AssigneeSettings";
 
 export interface TaskDialogHandle {
   flush: () => Promise<void>;
@@ -18,10 +20,23 @@ export default forwardRef<
     initial: Draft;
     recovered?: boolean;
     readOnly?: boolean;
+    readOnlyReason?: string;
+    onSource?: (source: TaskLink) => Promise<void>;
     onSaved: (board: Board) => void;
     onClose: () => void;
   }
->(function TaskDialog({ initial, recovered, readOnly, onSaved, onClose }, ref) {
+>(function TaskDialog(
+  { initial, recovered, readOnly, readOnlyReason, onSource, onSaved, onClose },
+  ref,
+) {
+  const [source, setSource] = useState<TaskLink | null>(null);
+  const { items: assignees, error: assigneeError } = useAssignees();
+  const [assigneeSettings, setAssigneeSettings] = useState(false);
+  const [taskState, setTaskState] = useState<{
+    deleted: boolean;
+    archived: boolean;
+    revision: number;
+  } | null>(null);
   const [draft, setDraft] = useState(initial);
   const current = useRef(initial);
   const baseline = useRef(recovered ? "" : JSON.stringify(initial));
@@ -86,6 +101,16 @@ export default forwardRef<
   useImperativeHandle(ref, () => ({ flush }));
   useEffect(() => {
     alive.current = true;
+    void Promise.all([api("taskLinks", {}), api("planner", {})])
+      .then(([links, board]) => {
+        if (alive.current) {
+          setSource(links.find((l) => l.taskId === initial.id) || null);
+          setTaskState(board.tasks.find((t) => t.id === initial.id) || null);
+        }
+      })
+      .catch((e) => {
+        if (alive.current) setError(errorText(e));
+      });
     dialog.current?.showModal();
     return () => {
       alive.current = false;
@@ -110,7 +135,7 @@ export default forwardRef<
     );
   };
   const cancel = () => {
-    if (busy) return;
+    if (busy || assigneeSettings) return;
     if (
       JSON.stringify(current.current) !== baseline.current ||
       imports.current.size
@@ -195,17 +220,111 @@ export default forwardRef<
           ×
         </button>
       </header>
+      {readOnlyReason && <p>{readOnlyReason}</p>}
+      {source &&
+        (source.active ? (
+          <button
+            onClick={() =>
+              void (async () => {
+                try {
+                  await flush();
+                  if (alive.current) await onSource?.(source);
+                } catch (e) {
+                  if (alive.current) setError(errorText(e));
+                }
+              })()
+            }
+          >
+            Открыть фрагмент в дневнике
+          </button>
+        ) : (
+          <p>Связь с фрагментом разорвана</p>
+        ))}
+      {(taskState?.deleted || taskState?.archived) && (
+        <p>
+          {taskState.deleted ? "Задача в корзине" : "Задача в архиве"}
+          <button
+            disabled={busy}
+            onClick={() =>
+              void (async () => {
+                setBusy(true);
+                try {
+                  const board = await api("plannerChange", {
+                    change: {
+                      action: "flag",
+                      id: initial.id,
+                      revision: taskState.revision,
+                      field: taskState.deleted ? "deleted" : "archived",
+                      value: false,
+                    },
+                  });
+                  if (alive.current) onSaved(board);
+                } catch (e) {
+                  if (alive.current) {
+                    setError(errorText(e));
+                    setBusy(false);
+                  }
+                }
+              })()
+            }
+          >
+            Восстановить задачу
+          </button>
+        </p>
+      )}
       <div className="task-fields">
         <label>
           Название
           <input
             autoFocus
             aria-label="Название задачи"
-            maxLength={300}
             value={draft.title}
             disabled={busy || readOnly}
             onChange={(e) => update({ title: e.target.value })}
           />
+        </label>
+        <label>
+          Исполнитель
+          <span className="assignee-picker">
+            <select
+              aria-label="Исполнитель"
+              value={draft.assigneeId || ""}
+              disabled={busy || readOnly}
+              onChange={(e) => update({ assigneeId: e.target.value || null })}
+            >
+              <option value="">Без исполнителя</option>
+              {assignees
+                .filter((a) => !a.archived || a.id === draft.assigneeId)
+                .map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                    {a.archived ? " · В архиве" : ""}
+                  </option>
+                ))}
+            </select>
+            {!readOnly && (
+              <button
+                title="Добавить исполнителя"
+                aria-label="Добавить исполнителя"
+                disabled={busy}
+                onClick={() =>
+                  void (async () => {
+                    setBusy(true);
+                    try {
+                      await flush();
+                      if (alive.current) setAssigneeSettings(true);
+                    } catch (e) {
+                      if (alive.current) setError(errorText(e));
+                    } finally {
+                      if (alive.current) setBusy(false);
+                    }
+                  })()
+                }
+              >
+                +
+              </button>
+            )}
+          </span>
         </label>
         <label>
           Дедлайн
@@ -235,7 +354,11 @@ export default forwardRef<
       </div>
       <footer className="task-dialog-footer">
         <div aria-live="polite">
-          {error ? <span role="alert">{error}</span> : status}
+          {error || assigneeError ? (
+            <span role="alert">{error || assigneeError}</span>
+          ) : (
+            status
+          )}
         </div>
         {confirm ? (
           <>
@@ -264,6 +387,15 @@ export default forwardRef<
           </>
         )}
       </footer>
+      {assigneeSettings && (
+        <AssigneeDialog
+          onClose={() => setAssigneeSettings(false)}
+          onCreated={(id) => {
+            setAssigneeSettings(false);
+            update({ assigneeId: id });
+          }}
+        />
+      )}
     </dialog>
   );
 });
