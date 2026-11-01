@@ -184,7 +184,7 @@
   pointer-events: none;
   overflow: hidden;
   padding: 15px;
-  background: var(--surface-card, #302b3c);
+  background: var(--panel);
   border: 1px solid var(--edge-soft, #b8a1de80);
   border-radius: 9px;
   box-shadow: 0 15px 35px var(--shadow-tint, #0007);
@@ -579,5 +579,113 @@
   }
   .assignee-row > span {
     flex-basis: 100%;
+  }
+}
+
+.task-edit-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.task-edit-panel[hidden],
+.task-history-panel[hidden] {
+  display: none;
+}
+.task-history-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 28px;
+}
+.task-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  background: var(--accent-wash, #b8a1de0b);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.task-dialog > header .task-tabs button {
+  font-size: 18px;
+  font-weight: 600;
+  border-radius: 7px;
+  padding: 8px 12px;
+  color: var(--muted);
+}
+.task-dialog > header .task-tabs button[aria-selected="true"] {
+  background: var(--surface-card, #302b3c);
+  color: var(--text);
+}
+.task-dialog > header .task-tabs button:hover {
+  color: var(--text);
+}
+.task-tabs button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.task-history {
+  max-width: 800px;
+}
+.task-history-baseline {
+  padding: 14px;
+  margin-bottom: 24px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.history-day {
+  margin-bottom: 28px;
+}
+.history-day h3 {
+  font-size: 15px;
+  margin: 0 0 18px;
+  color: var(--text);
+}
+.history-stage {
+  border-left: 1px solid var(--line);
+  padding-left: 18px;
+  margin: 0 0 20px 4px;
+}
+.history-stage h4 {
+  margin: 0 0 10px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.history-stage ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.history-stage li {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin: 10px 0;
+  color: var(--muted);
+}
+.history-stage time {
+  font-variant-numeric: tabular-nums;
+  flex: none;
+  color: var(--accent);
+}
+.history-stage span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.history-stage small {
+  display: block;
+  margin-top: 5px;
+}
+.task-history-empty {
+  padding: 16px 0;
+  color: var(--muted);
+}
+@media (max-width: 650px) {
+  .task-dialog > header .task-tabs button {
+    font-size: 14px;
+    padding: 8px;
   }
 }

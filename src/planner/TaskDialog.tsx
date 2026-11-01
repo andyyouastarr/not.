@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
+import TaskHistory from "./TaskHistory";
 import JournalEditor from "../Editor";
 import { api, errorText } from "../api";
 import type { Board, Draft } from "./types";
@@ -29,6 +30,7 @@ export default forwardRef<
   { initial, recovered, readOnly, readOnlyReason, onSource, onSaved, onClose },
   ref,
 ) {
+  const [tab, setTab] = useState<"edit" | "history">("edit");
   const [source, setSource] = useState<TaskLink | null>(null);
   const { items: assignees, error: assigneeError } = useAssignees();
   const [assigneeSettings, setAssigneeSettings] = useState(false);
@@ -209,148 +211,201 @@ export default forwardRef<
       }}
     >
       <header>
-        <h2>
-          {readOnly
-            ? "Просмотр задачи"
-            : initial.revision
-              ? "Редактирование задачи"
-              : "Новая задача"}
-        </h2>
+        <div className="task-tabs" role="tablist" aria-label="Разделы задачи">
+          <button
+            role="tab"
+            id="task-edit-tab"
+            aria-controls="task-edit-panel"
+            aria-selected={tab === "edit"}
+            tabIndex={tab === "edit" ? 0 : -1}
+            onClick={() => setTab("edit")}
+            onKeyDown={(e) => {
+              if (["ArrowLeft", "ArrowRight", "End"].includes(e.key)) {
+                e.preventDefault();
+                setTab("history");
+                document.getElementById("task-history-tab")?.focus();
+              }
+            }}
+          >
+            {readOnly
+              ? "Просмотр задачи"
+              : initial.revision
+                ? "Редактирование задачи"
+                : "Новая задача"}
+          </button>
+          <button
+            role="tab"
+            id="task-history-tab"
+            aria-controls="task-history-panel"
+            aria-selected={tab === "history"}
+            tabIndex={tab === "history" ? 0 : -1}
+            onClick={() => setTab("history")}
+            onKeyDown={(e) => {
+              if (["ArrowLeft", "ArrowRight", "Home"].includes(e.key)) {
+                e.preventDefault();
+                setTab("edit");
+                document.getElementById("task-edit-tab")?.focus();
+              }
+            }}
+          >
+            История
+          </button>
+        </div>
         <button aria-label="Закрыть задачу" disabled={busy} onClick={cancel}>
           ×
         </button>
       </header>
-      {readOnlyReason && <p>{readOnlyReason}</p>}
-      {source &&
-        (source.active ? (
-          <button
-            onClick={() =>
-              void (async () => {
-                try {
-                  await flush();
-                  if (alive.current) await onSource?.(source);
-                } catch (e) {
-                  if (alive.current) setError(errorText(e));
-                }
-              })()
-            }
-          >
-            Открыть фрагмент в дневнике
-          </button>
-        ) : (
-          <p>Связь с фрагментом разорвана</p>
-        ))}
-      {(taskState?.deleted || taskState?.archived) && (
-        <p>
-          {taskState.deleted ? "Задача в корзине" : "Задача в архиве"}
-          <button
-            disabled={busy}
-            onClick={() =>
-              void (async () => {
-                setBusy(true);
-                try {
-                  const board = await api("plannerChange", {
-                    change: {
-                      action: "flag",
-                      id: initial.id,
-                      revision: taskState.revision,
-                      field: taskState.deleted ? "deleted" : "archived",
-                      value: false,
-                    },
-                  });
-                  if (alive.current) onSaved(board);
-                } catch (e) {
-                  if (alive.current) {
-                    setError(errorText(e));
-                    setBusy(false);
+      <div
+        role="tabpanel"
+        id="task-edit-panel"
+        aria-labelledby="task-edit-tab"
+        className="task-edit-panel"
+        hidden={tab !== "edit"}
+      >
+        {readOnlyReason && <p>{readOnlyReason}</p>}
+        {source &&
+          (source.active ? (
+            <button
+              onClick={() =>
+                void (async () => {
+                  try {
+                    await flush();
+                    if (alive.current) await onSource?.(source);
+                  } catch (e) {
+                    if (alive.current) setError(errorText(e));
                   }
-                }
-              })()
-            }
-          >
-            Восстановить задачу
-          </button>
-        </p>
-      )}
-      <div className="task-fields">
-        <label>
-          Название
-          <input
-            autoFocus
-            aria-label="Название задачи"
-            value={draft.title}
-            disabled={busy || readOnly}
-            onChange={(e) => update({ title: e.target.value })}
-          />
-        </label>
-        <label>
-          Исполнитель
-          <span className="assignee-picker">
-            <select
-              aria-label="Исполнитель"
-              value={draft.assigneeId || ""}
-              disabled={busy || readOnly}
-              onChange={(e) => update({ assigneeId: e.target.value || null })}
+                })()
+              }
             >
-              <option value="">Без исполнителя</option>
-              {assignees
-                .filter((a) => !a.archived || a.id === draft.assigneeId)
-                .map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                    {a.archived ? " · В архиве" : ""}
-                  </option>
-                ))}
-            </select>
-            {!readOnly && (
-              <button
-                title="Добавить исполнителя"
-                aria-label="Добавить исполнителя"
-                disabled={busy}
-                onClick={() =>
-                  void (async () => {
-                    setBusy(true);
-                    try {
-                      await flush();
-                      if (alive.current) setAssigneeSettings(true);
-                    } catch (e) {
-                      if (alive.current) setError(errorText(e));
-                    } finally {
-                      if (alive.current) setBusy(false);
+              Открыть фрагмент в дневнике
+            </button>
+          ) : (
+            <p>Связь с фрагментом разорвана</p>
+          ))}
+        {(taskState?.deleted || taskState?.archived) && (
+          <p>
+            {taskState.deleted ? "Задача в корзине" : "Задача в архиве"}
+            <button
+              disabled={busy}
+              onClick={() =>
+                void (async () => {
+                  setBusy(true);
+                  try {
+                    const board = await api("plannerChange", {
+                      change: {
+                        action: "flag",
+                        id: initial.id,
+                        revision: taskState.revision,
+                        field: taskState.deleted ? "deleted" : "archived",
+                        value: false,
+                      },
+                    });
+                    if (alive.current) onSaved(board);
+                  } catch (e) {
+                    if (alive.current) {
+                      setError(errorText(e));
+                      setBusy(false);
                     }
-                  })()
-                }
+                  }
+                })()
+              }
+            >
+              Восстановить задачу
+            </button>
+          </p>
+        )}
+        <div className="task-fields">
+          <label>
+            Название
+            <input
+              autoFocus
+              aria-label="Название задачи"
+              value={draft.title}
+              disabled={busy || readOnly}
+              onChange={(e) => update({ title: e.target.value })}
+            />
+          </label>
+          <label>
+            Исполнитель
+            <span className="assignee-picker">
+              <select
+                aria-label="Исполнитель"
+                value={draft.assigneeId || ""}
+                disabled={busy || readOnly}
+                onChange={(e) => update({ assigneeId: e.target.value || null })}
               >
-                +
-              </button>
-            )}
-          </span>
-        </label>
-        <label>
-          Дедлайн
-          <input
-            type="date"
-            aria-label="Дедлайн"
-            value={draft.deadline || ""}
-            disabled={busy || readOnly}
-            onChange={(e) => update({ deadline: e.target.value || null })}
+                <option value="">Без исполнителя</option>
+                {assignees
+                  .filter((a) => !a.archived || a.id === draft.assigneeId)
+                  .map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                      {a.archived ? " · В архиве" : ""}
+                    </option>
+                  ))}
+              </select>
+              {!readOnly && (
+                <button
+                  title="Добавить исполнителя"
+                  aria-label="Добавить исполнителя"
+                  disabled={busy}
+                  onClick={() =>
+                    void (async () => {
+                      setBusy(true);
+                      try {
+                        await flush();
+                        if (alive.current) setAssigneeSettings(true);
+                      } catch (e) {
+                        if (alive.current) setError(errorText(e));
+                      } finally {
+                        if (alive.current) setBusy(false);
+                      }
+                    })()
+                  }
+                >
+                  +
+                </button>
+              )}
+            </span>
+          </label>
+          <label>
+            Дедлайн
+            <input
+              type="date"
+              aria-label="Дедлайн"
+              value={draft.deadline || ""}
+              disabled={busy || readOnly}
+              onChange={(e) => update({ deadline: e.target.value || null })}
+            />
+          </label>
+        </div>
+        <div className="task-description">
+          <JournalEditor
+            document={draft.document}
+            editable={!saving && !readOnly}
+            onChange={(document) => update({ document })}
+            onError={setError}
+            onImport={(promise) => {
+              imports.current.add(promise);
+              void promise.then(
+                () => imports.current.delete(promise),
+                () => imports.current.delete(promise),
+              );
+            }}
           />
-        </label>
+        </div>
       </div>
-      <div className="task-description">
-        <JournalEditor
-          document={draft.document}
-          editable={!saving && !readOnly}
-          onChange={(document) => update({ document })}
-          onError={setError}
-          onImport={(promise) => {
-            imports.current.add(promise);
-            void promise.then(
-              () => imports.current.delete(promise),
-              () => imports.current.delete(promise),
-            );
-          }}
-        />
+      <div
+        role="tabpanel"
+        id="task-history-panel"
+        aria-labelledby="task-history-tab"
+        className="task-history-panel"
+        hidden={tab !== "history"}
+        tabIndex={0}
+      >
+        {tab === "history" && (
+          <TaskHistory id={initial.id} saved={initial.revision > 0} />
+        )}
       </div>
       <footer className="task-dialog-footer">
         <div aria-live="polite">

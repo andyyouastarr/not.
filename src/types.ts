@@ -42,6 +42,10 @@ export type SaveEntry = Pick<
   "id" | "date" | "title" | "document" | "revision"
 >;
 export interface Commands {
+  taskHistory: [
+    { query: import("./planner/history").HistoryQuery },
+    import("./planner/history").HistoryPage,
+  ];
   appearance: [{}, AppearancePreferences];
   setAppearance: [{ value: AppearancePreferences }, AppearancePreferences];
   appearanceReady: [{}, boolean];

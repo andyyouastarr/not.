@@ -4,6 +4,7 @@ mod clipboard;
 mod context_menu;
 mod crypto;
 mod export;
+mod history;
 mod idle;
 mod keyboard;
 mod links;
@@ -39,6 +40,9 @@ enum Request {
         value: appearance::Preferences,
     },
     AppearanceReady,
+    TaskHistory {
+        query: history::Query,
+    },
     TaskLinks,
     CreateLinkedTask {
         entry: vault::SaveEntry,
@@ -363,6 +367,7 @@ fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Valu
         Request::Assignees => Ok(json!(v.assignees()?)),
         Request::AssigneeChange { change } => Ok(json!(v.assignee_change(change)?)),
         Request::Planner => Ok(json!(v.planner()?)),
+        Request::TaskHistory { query } => Ok(json!(v.task_history(query)?)),
         Request::TaskLinks => Ok(json!(v.task_links()?)),
         Request::CreateLinkedTask {
             entry,

@@ -431,7 +431,19 @@ impl Vault {
         {
             sql(tx.execute("INSERT INTO planner_tasks VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", params![t.id, crate::assignees::stored_task(t)]))?;
         }
-        crate::assignees::record_changes(&tx, &original, &board, stages_changed)?;
+        let operation = crate::history::Operation::new();
+        crate::assignees::record_changes(&tx, &original, &board, stages_changed, &operation)?;
+        crate::history::record(
+            &tx,
+            &operation,
+            &original,
+            &board,
+            if stages_changed {
+                "stageSettings"
+            } else {
+                "task"
+            },
+        )?;
         board.revision += 1;
         sql(tx.execute(
             "UPDATE planner_meta SET revision=?,draft=? WHERE id=1",
@@ -595,7 +607,7 @@ mod tests {
                 .conn
                 .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            4
+            5
         );
         assert!(std::fs::read_dir(dir.path().join("migration-backups"))
             .unwrap()

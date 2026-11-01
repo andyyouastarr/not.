@@ -1,5 +1,6 @@
 // Development-only, opt-in preview. No persistence, encryption claims, or production fallback.
 import type { Commands, Entry, Preferences, Summary } from "./types";
+import { historyPreview } from "./planner/historyDemo";
 import { localDate } from "./api";
 import { assigneePreview } from "./planner/assigneeDemo";
 import { preview } from "./planner/demo";
@@ -86,6 +87,9 @@ export async function mock<K extends keyof Commands>(
   const a = args as Record<string, unknown>;
   let result: unknown = true;
   switch (type) {
+    case "taskHistory":
+      result = historyPreview((args as Commands["taskHistory"][0]).query);
+      break;
     case "appearance":
       result = appearance;
       break;

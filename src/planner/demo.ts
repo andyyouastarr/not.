@@ -1,4 +1,5 @@
 // Development preview only; real validation and persistence live in Rust.
+import { recordPreview } from "./historyDemo";
 import type { Board, Change } from "./types";
 let board: Board = {
   revision: 0,
@@ -12,6 +13,7 @@ let board: Board = {
 };
 export function preview(change?: Change): Board {
   if (!change) return structuredClone(board);
+  const before = structuredClone(board);
   if (change.action === "draft") board.draft = structuredClone(change.draft);
   if (change.action === "save") {
     const old = board.tasks.find((t) => t.id === change.draft.id);
@@ -65,5 +67,6 @@ export function preview(change?: Change): Board {
         });
   }
   if (change.action !== "draft") board.revision++;
+  recordPreview(before, board);
   return structuredClone(board);
 }

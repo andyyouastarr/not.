@@ -247,6 +247,14 @@ impl Vault {
             params![fragment, entry.id, task.id, operation],
         ))?;
         sql(tx.execute("UPDATE planner_meta SET revision=revision+1 WHERE id=1", []))?;
+        let after = self.planner()?;
+        crate::history::record(
+            &tx,
+            &crate::history::Operation::new(),
+            &board,
+            &after,
+            "diary",
+        )?;
         let saved = self.save_in_transaction(entry)?;
         sql(tx.commit())?;
         Ok(Created { entry: saved, task })
@@ -279,6 +287,7 @@ impl Vault {
         {
             return Err("Фрагмент изменился. Отмена недоступна.".into());
         }
+        let before = self.planner()?;
         task.deleted = true;
         task.revision += 1;
         task.updated_at = chrono::Utc::now().to_rfc3339();
@@ -286,6 +295,14 @@ impl Vault {
             "UPDATE planner_tasks SET payload=? WHERE id=?",
             params![crate::assignees::stored_task(&task), task.id],
         ))?;
+        let after = self.planner()?;
+        crate::history::record(
+            &tx,
+            &crate::history::Operation::new(),
+            &before,
+            &after,
+            "undoCreation",
+        )?;
         let saved = self.save_in_transaction(entry)?;
         sql(tx.execute(
             "UPDATE task_links SET cancelled=1 WHERE fragment_id=?",
@@ -375,6 +392,15 @@ mod tests {
         );
         assert_eq!(v.planner().unwrap().tasks.len(), 1);
         assert_eq!(v.planner().unwrap().draft.unwrap().id, draft.id);
+        let count: i64 = v
+            .conn
+            .query_row(
+                "SELECT count(*) FROM planner_task_events WHERE kind='created' AND reason='diary'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
         v.validate_task_links().unwrap();
         let (e, id) = marked(&mut v, "atomic failure");
         v.conn.execute_batch("CREATE TRIGGER fail_entry BEFORE UPDATE ON entries BEGIN SELECT RAISE(FAIL,'injected'); END;").unwrap();
@@ -439,6 +465,8 @@ mod tests {
         v.undo_linked_task(e, id, 1).unwrap();
         assert!(v.task_links().unwrap().is_empty());
         assert!(v.planner().unwrap().tasks[0].deleted);
+        let count: i64 = v.conn.query_row("SELECT count(*) FROM planner_task_events WHERE kind='deleted' AND reason='undoCreation'", [], |r|r.get(0)).unwrap();
+        assert_eq!(count, 1);
     }
     #[test]
     fn v2_migration_preserves_password_and_recovery() {

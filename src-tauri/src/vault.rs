@@ -329,6 +329,21 @@ impl Vault {
             "INSERT INTO settings(key,value) VALUES('pending_recovery',?)",
             [&recovery],
         ))?;
+        let vault = Self {
+            root: staging.path().into(),
+            conn,
+            master,
+            manifest,
+        };
+        let tx = sql(vault.conn.unchecked_transaction())?;
+        crate::history::schema(&vault)?;
+        sql(tx.commit())?;
+        let Self {
+            conn,
+            master,
+            manifest,
+            ..
+        } = vault;
         drop(conn);
         rename_directory(staging.path(), root)?;
         let conn = connect(&root.join(DB), &master)?;
@@ -352,7 +367,7 @@ impl Vault {
         let master = crypto::unlock(&manifest, credential, recovery)?;
         let conn = connect(&root.join(DB), &master)?;
         let version: i64 = sql(conn.query_row("PRAGMA user_version", [], |r| r.get(0)))?;
-        if !(1..=4).contains(&version) {
+        if !(1..=5).contains(&version) {
             return Err("Версия базы не поддерживается. Обновите приложение.".into());
         }
         let vault = Self {
@@ -361,7 +376,7 @@ impl Vault {
             master,
             manifest,
         };
-        if version < 4 {
+        if version < 5 {
             let folder = root
                 .parent()
                 .ok_or("Неверный путь")?
@@ -384,7 +399,10 @@ impl Vault {
             if version < 3 {
                 crate::task_links::schema_in_transaction(&tx)?;
             }
-            crate::assignees::schema(&tx)?;
+            if version < 4 {
+                crate::assignees::schema(&tx)?;
+            }
+            crate::history::schema(&vault)?;
             sql(tx.commit())?;
         }
         Ok(vault)
@@ -821,6 +839,7 @@ impl Vault {
         drop(stmt);
         vault.validate_planner()?;
         vault.validate_assignees()?;
+        vault.validate_history()?;
         vault.validate_task_links()?;
         drop(vault);
         rename_directory(staging.path(), destination)?;

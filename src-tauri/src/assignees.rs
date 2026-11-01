@@ -40,7 +40,7 @@ mod tests {
     }
     fn count(v: &Vault) -> i64 {
         v.conn
-            .query_row("SELECT count(*) FROM planner_task_events", [], |r| r.get(0))
+            .query_row("SELECT count(*) FROM planner_task_events WHERE kind IN ('assigned','reassigned','unassigned','completed','reopened') OR (kind='baseline' AND operation_id IS NULL)", [], |r| r.get(0))
             .unwrap()
     }
     #[test]
@@ -343,6 +343,7 @@ pub fn record_changes(
     before: &Board,
     after: &Board,
     stage_settings: bool,
+    operation: &crate::history::Operation,
 ) -> Result<()> {
     let complete = |b: &Board, t: &Task| {
         b.stages
@@ -396,7 +397,20 @@ pub fn record_changes(
             }
         }
         for (kind, payload) in events {
-            sql(conn.execute("INSERT INTO planner_task_events(task_id,revision,occurred_at,kind,reason,payload) VALUES(?,?,?,?,?,?)",params![task.id,task.revision,Utc::now().to_rfc3339(),kind,if stage_settings{"stageSettings"}else{"task"},payload.to_string()]))?;
+            crate::history::write(
+                conn,
+                operation,
+                before,
+                after,
+                task,
+                kind,
+                if stage_settings {
+                    "stageSettings"
+                } else {
+                    "task"
+                },
+                payload,
+            )?;
         }
     }
     Ok(())
@@ -490,7 +504,14 @@ impl Vault {
             let (kind, reason, date, raw, revision, current) = sql(row)?;
             chrono::DateTime::parse_from_rfc3339(&date).map_err(|_| "Повреждена дата события")?;
             if revision > current
-                || !["migration", "task", "stageSettings"].contains(&reason.as_str())
+                || ![
+                    "migration",
+                    "task",
+                    "stageSettings",
+                    "diary",
+                    "undoCreation",
+                ]
+                .contains(&reason.as_str())
             {
                 return Err("Повреждена история задач".into());
             }
@@ -499,6 +520,8 @@ impl Vault {
             let keys = match kind.as_str() {
                 "assigned" | "reassigned" | "unassigned" => vec!["previous", "current"],
                 "completed" | "reopened" => vec!["assignee"],
+                "created" | "moved" | "edited" | "archived" | "unarchived" | "deleted"
+                | "restored" => vec![],
                 "baseline" => {
                     if reason != "migration"
                         || !payload["completed"].is_boolean() && !payload["completed"].is_number()
