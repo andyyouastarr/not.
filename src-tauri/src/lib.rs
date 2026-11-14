@@ -59,6 +59,9 @@ enum Request {
         change: assignees::Change,
     },
     Planner,
+    SavePlannerDraft {
+        draft: Option<planner::Draft>,
+    },
     PlannerChange {
         change: planner::Change,
     },
@@ -379,6 +382,10 @@ fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Valu
             fragment,
             revision,
         } => Ok(json!(v.undo_linked_task(entry, fragment, revision)?)),
+        Request::SavePlannerDraft { draft } => {
+            v.save_planner_draft(draft.as_ref())?;
+            Ok(json!(true))
+        }
         Request::PlannerChange { change } => Ok(json!(v.planner_change(change)?)),
         Request::List {
             query,

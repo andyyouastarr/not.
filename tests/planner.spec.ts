@@ -236,6 +236,12 @@ test("planner handles a populated board and zero or one stage", async ({
     window.dispatchEvent(new Event("planner-updated"));
   });
   await expect(page.locator(".planner-card")).toHaveCount(300);
+  await expect(page.locator(".card-menu select")).toHaveCount(0);
+  const menu = page.locator(".card-menu").first();
+  await menu.locator("summary").click();
+  await expect(menu.locator("select")).toHaveCount(1);
+  await menu.locator("summary").click();
+  await expect(page.locator(".card-menu select")).toHaveCount(0);
   await page
     .getByRole("button", { name: "Новая задача", exact: true })
     .last()

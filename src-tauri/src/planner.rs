@@ -163,6 +163,22 @@ fn touch(task: &mut Task) {
 }
 
 impl Vault {
+    // Autosave is independent of board size and never serializes other tasks.
+    pub fn save_planner_draft(&mut self, draft: Option<&Draft>) -> Result<()> {
+        let tx = sql(self.conn.unchecked_transaction())?;
+        if let Some(draft) = draft {
+            document(self, draft, false)?;
+        }
+        let raw = draft
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|_| "Не удалось сохранить черновик")?;
+        sql(self
+            .conn
+            .execute("UPDATE planner_meta SET draft=? WHERE id=1", [raw]))?;
+        sql(tx.commit())
+    }
+
     pub fn planner(&self) -> Result<Board> {
         let stages = rows(
             &self.conn,
@@ -552,6 +568,38 @@ mod tests {
         v.validate_planner().unwrap();
     }
     #[test]
+    fn draft_autosave_does_not_read_tasks_and_preserves_state_on_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut v, _) = Vault::create(&dir.path().join("vault"), "test password").unwrap();
+        let task = draft("Saved task");
+        v.planner_change(Change::Save { draft: task }).unwrap();
+        let before = serde_json::to_value(v.planner().unwrap()).unwrap();
+        let pending = draft("Pending title");
+        // A board read fails while the task table is unavailable; autosave must not read it.
+        v.conn
+            .execute_batch("ALTER TABLE planner_tasks RENAME TO tasks_hidden")
+            .unwrap();
+        assert!(v.planner().is_err());
+        v.save_planner_draft(Some(&pending)).unwrap();
+        v.conn
+            .execute_batch("ALTER TABLE tasks_hidden RENAME TO planner_tasks")
+            .unwrap();
+        let after = serde_json::to_value(v.planner().unwrap()).unwrap();
+        assert_eq!(before["tasks"], after["tasks"]);
+        assert_eq!(before["revision"], after["revision"]);
+        v.conn.execute_batch("PRAGMA query_only=ON").unwrap();
+        assert!(v.save_planner_draft(None).is_err());
+        assert_eq!(v.planner().unwrap().draft.unwrap().title, pending.title);
+        v.conn.execute_batch("PRAGMA query_only=OFF").unwrap();
+        let mut invalid = pending.clone();
+        invalid.title = "x".repeat(301);
+        assert!(v.save_planner_draft(Some(&invalid)).is_err());
+        assert_eq!(v.planner().unwrap().draft.unwrap().title, pending.title);
+        v.save_planner_draft(None).unwrap();
+        assert!(v.planner().unwrap().draft.is_none());
+    }
+
+    #[test]
     fn encrypted_draft_backup_and_write_failure() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("vault");
@@ -569,10 +617,7 @@ mod tests {
         v.conn.execute_batch("PRAGMA query_only=OFF").unwrap();
         v.planner_change(Change::Save { draft: d }).unwrap();
         let pending = draft("Черновик после перезапуска");
-        v.planner_change(Change::Draft {
-            draft: Some(pending.clone()),
-        })
-        .unwrap();
+        v.save_planner_draft(Some(&pending)).unwrap();
         let backup = dir.path().join("planner.notbackup");
         v.backup(&backup).unwrap();
         drop(v);
@@ -607,7 +652,7 @@ mod tests {
                 .conn
                 .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            5
+            6
         );
         assert!(std::fs::read_dir(dir.path().join("migration-backups"))
             .unwrap()

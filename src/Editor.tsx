@@ -42,6 +42,7 @@ import { externalUrl, openLink } from "./links";
 import { importImage, clipboardFiles } from "./pasteImage";
 import { taskLinkExtension, type DiaryLinkActions } from "./taskLinks";
 import { useDiaryTaskMenu, UnlinkConfirmation } from "./DiaryTaskMenu";
+import { TimestampDivider, useTimestampMenu } from "./TimestampDivider";
 
 function imageDropTarget(view: EditorView, x: number, y: number) {
   const coords = view.posAtCoords({ left: x, top: y });
@@ -111,6 +112,7 @@ export function hasContent(doc: JSONContent): boolean {
     doc.type === "attachment" ||
     doc.type === "table" ||
     doc.type === "horizontalRule" ||
+    doc.type === "timestampDivider" ||
     (doc.content?.some(hasContent) ?? false)
   );
 }
@@ -149,6 +151,7 @@ function moveBlock(editor: EditorType, direction: number) {
   editor.view.focus();
 }
 type Props = {
+  timestampMenu?: boolean;
   diaryLinks?: DiaryLinkActions;
   onReady?: (editor: EditorType) => void;
   document: JSONContent;
@@ -165,6 +168,7 @@ export default function JournalEditor({
   onImport,
   diaryLinks,
   onReady,
+  timestampMenu = false,
 }: Props) {
   const linkActions = useRef(diaryLinks);
   linkActions.current = diaryLinks;
@@ -241,6 +245,7 @@ export default function JournalEditor({
   };
   const editor = useEditor({
     extensions: [
+      TimestampDivider,
       taskLinkExtension({
         actions: () => linkActions.current,
         confirm: (transaction, count) => setUnlink({ transaction, count }),
@@ -501,6 +506,7 @@ export default function JournalEditor({
     editor?.setEditable(editable, false);
   }, [editor, editable]);
   useDiaryTaskMenu(editor, diaryLinks, onError);
+  useTimestampMenu(editor, timestampMenu && editable);
   useEffect(() => {
     if (editor) onReady?.(editor);
   }, [editor]);

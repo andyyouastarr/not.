@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { Fragment } from "react";
+import CardMenu from "./CardMenu";
 import { useTaskDrag } from "./useTaskDrag";
 import { Plus, Settings, Lock, PanelLeftOpen } from "lucide-react";
 import { api, errorText, localDate } from "../api";
@@ -325,58 +326,55 @@ export default forwardRef<PlannerHandle, Props>(function Planner(
           )}
           {completed && <small>✓ Выполнено</small>}
         </button>
-        <details className="card-menu">
-          <summary aria-label={`Действия: ${task.title}`}>Действия</summary>
-          <div>
-            {!task.deleted && !task.archived && (
-              <>
-                <select
-                  aria-label={`Стадия: ${task.title}`}
-                  value={task.stageId || ""}
-                  disabled={locked}
-                  onChange={(e) => move(task.id, e.target.value || null)}
-                >
-                  <option value="">Входящие</option>
-                  {board?.stages.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.title}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  disabled={locked || index <= 0}
-                  onClick={() =>
-                    move(task.id, task.stageId, siblings[index - 1].id)
-                  }
-                >
-                  Выше
-                </button>
-                <button
-                  disabled={locked || index === siblings.length - 1}
-                  onClick={() =>
-                    move(task.id, task.stageId, siblings[index + 2]?.id || null)
-                  }
-                >
-                  Ниже
-                </button>
-              </>
-            )}
-            {!task.deleted && (completed || task.archived) && (
-              <button
+        <CardMenu title={task.title}>
+          {!task.deleted && !task.archived && (
+            <>
+              <select
+                aria-label={`Стадия: ${task.title}`}
+                value={task.stageId || ""}
                 disabled={locked}
-                onClick={() => flag(task, "archived", !task.archived)}
+                onChange={(e) => move(task.id, e.target.value || null)}
               >
-                {task.archived ? "Вернуть из архива" : "В архив"}
+                <option value="">Входящие</option>
+                {board?.stages.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.title}
+                  </option>
+                ))}
+              </select>
+              <button
+                disabled={locked || index <= 0}
+                onClick={() =>
+                  move(task.id, task.stageId, siblings[index - 1].id)
+                }
+              >
+                Выше
               </button>
-            )}
+              <button
+                disabled={locked || index === siblings.length - 1}
+                onClick={() =>
+                  move(task.id, task.stageId, siblings[index + 2]?.id || null)
+                }
+              >
+                Ниже
+              </button>
+            </>
+          )}
+          {!task.deleted && (completed || task.archived) && (
             <button
               disabled={locked}
-              onClick={() => flag(task, "deleted", !task.deleted)}
+              onClick={() => flag(task, "archived", !task.archived)}
             >
-              {task.deleted ? "Восстановить" : "В корзину"}
+              {task.archived ? "Вернуть из архива" : "В архив"}
             </button>
-          </div>
-        </details>
+          )}
+          <button
+            disabled={locked}
+            onClick={() => flag(task, "deleted", !task.deleted)}
+          >
+            {task.deleted ? "Восстановить" : "В корзину"}
+          </button>
+        </CardMenu>
       </article>
     );
   };

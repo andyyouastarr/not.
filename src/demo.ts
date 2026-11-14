@@ -165,6 +165,13 @@ export async function mock<K extends keyof Commands>(
     case "planner":
       result = preview();
       break;
+    case "savePlannerDraft":
+      preview({
+        action: "draft",
+        draft: (args as Commands["savePlannerDraft"][0]).draft,
+      });
+      result = true;
+      break;
     case "plannerChange":
       result = preview((args as Commands["plannerChange"][0]).change);
       break;

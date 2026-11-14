@@ -64,6 +64,11 @@ export function newDraft(): Draft {
   };
 }
 export function excerpt(node: JSONContent): string {
+  if (node.type === "timestampDivider")
+    return String(node.attrs?.date || "")
+      .split("-")
+      .reverse()
+      .join(".");
   return [node.text || "", ...(node.content || []).map(excerpt)]
     .join(" ")
     .trim();

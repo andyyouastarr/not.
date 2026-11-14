@@ -1264,7 +1264,7 @@ export default function App() {
               <ChevronRight size={16} />
             </button>
           </div>
-          <p className="version">not. studio · 0.6.0</p>
+          <p className="version">not. studio · 0.6.3</p>
         </Modal>
       )}
       {modal === "restore" && (

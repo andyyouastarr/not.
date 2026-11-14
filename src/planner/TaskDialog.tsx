@@ -1,5 +1,7 @@
 import {
   forwardRef,
+  memo,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -11,6 +13,9 @@ import { api, errorText } from "../api";
 import type { Board, Draft } from "./types";
 import type { TaskLink } from "../taskLinks";
 import { AssigneeDialog, useAssignees } from "./AssigneeSettings";
+
+// Metadata edits must not reconfigure the rich-text editor on every keystroke.
+const TaskDescriptionEditor = memo(JournalEditor);
 
 export interface TaskDialogHandle {
   flush: () => Promise<void>;
@@ -41,8 +46,9 @@ export default forwardRef<
   } | null>(null);
   const [draft, setDraft] = useState(initial);
   const current = useRef(initial);
-  const baseline = useRef(recovered ? "" : JSON.stringify(initial));
-  const persisted = useRef(recovered ? JSON.stringify(initial) : "");
+  const [initialRaw] = useState(() => JSON.stringify(initial));
+  const baseline = useRef(recovered ? "" : initialRaw);
+  const persisted = useRef(recovered ? initialRaw : "");
   const [status, setStatus] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -54,7 +60,7 @@ export default forwardRef<
   const alive = useRef(true);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const outside = useRef(false);
-  const enqueue = <T,>(run: () => Promise<T>): Promise<T> => {
+  const enqueue = useCallback(<T,>(run: () => Promise<T>): Promise<T> => {
     const next = chain.current
       .catch(() => {})
       .then(() => {
@@ -63,8 +69,8 @@ export default forwardRef<
       });
     chain.current = next;
     return next;
-  };
-  const saveDraft = async () => {
+  }, []);
+  const saveDraft = useCallback(async () => {
     if (
       readOnly ||
       (JSON.stringify(current.current) === baseline.current &&
@@ -75,9 +81,7 @@ export default forwardRef<
       raw = JSON.stringify(snapshot);
     if (raw === persisted.current) return;
     setStatus("Сохраняется черновик…");
-    await enqueue(() =>
-      api("plannerChange", { change: { action: "draft", draft: snapshot } }),
-    );
+    await enqueue(() => api("savePlannerDraft", { draft: snapshot }));
     if (alive.current) {
       persisted.current = raw;
       setStatus(
@@ -87,7 +91,7 @@ export default forwardRef<
       );
       setError("");
     }
-  };
+  }, [readOnly, enqueue]);
   const flush = async () => {
     if (timer.current) clearTimeout(timer.current);
     while (imports.current.size) await Promise.all([...imports.current]);
@@ -120,22 +124,36 @@ export default forwardRef<
       dialog.current?.close();
     };
   }, []);
-  const update = (patch: Partial<Draft>) => {
-    current.current = { ...current.current, ...patch };
-    setDraft(current.current);
-    setStatus("Несохранённые изменения");
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(
-      () =>
-        void saveDraft().catch((e) => {
-          if (alive.current) {
-            setError(errorText(e));
-            setStatus("Ошибка сохранения черновика");
-          }
-        }),
-      500,
+  const update = useCallback(
+    (patch: Partial<Draft>) => {
+      current.current = { ...current.current, ...patch };
+      setDraft(current.current);
+      setStatus("Несохранённые изменения");
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(
+        () =>
+          void saveDraft().catch((e) => {
+            if (alive.current) {
+              setError(errorText(e));
+              setStatus("Ошибка сохранения черновика");
+            }
+          }),
+        500,
+      );
+    },
+    [saveDraft],
+  );
+  const updateDocument = useCallback(
+    (document: Draft["document"]) => update({ document }),
+    [update],
+  );
+  const trackImport = useCallback((promise: Promise<void>) => {
+    imports.current.add(promise);
+    void promise.then(
+      () => imports.current.delete(promise),
+      () => imports.current.delete(promise),
     );
-  };
+  }, []);
   const cancel = () => {
     if (busy || assigneeSettings) return;
     if (
@@ -154,9 +172,7 @@ export default forwardRef<
       while (imports.current.size)
         await Promise.allSettled([...imports.current]);
       if (timer.current) clearTimeout(timer.current);
-      await enqueue(() =>
-        api("plannerChange", { change: { action: "draft", draft: null } }),
-      );
+      await enqueue(() => api("savePlannerDraft", { draft: null }));
       if (alive.current) onClose();
     } catch (e) {
       if (alive.current) {
@@ -380,18 +396,13 @@ export default forwardRef<
           </label>
         </div>
         <div className="task-description">
-          <JournalEditor
+          <TaskDescriptionEditor
+            timestampMenu={tab === "edit" && !busy && !assigneeSettings}
             document={draft.document}
             editable={!saving && !readOnly}
-            onChange={(document) => update({ document })}
+            onChange={updateDocument}
             onError={setError}
-            onImport={(promise) => {
-              imports.current.add(promise);
-              void promise.then(
-                () => imports.current.delete(promise),
-                () => imports.current.delete(promise),
-              );
-            }}
+            onImport={trackImport}
           />
         </div>
       </div>

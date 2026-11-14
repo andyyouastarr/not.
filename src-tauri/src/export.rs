@@ -102,6 +102,13 @@ fn render(v: &Value, vault: &Vault, assets: &Path) -> Result<String> {
         "tableHeader" => "th",
         "hardBreak" => return Ok("<br>".into()),
         "horizontalRule" => return Ok("<hr>".into()),
+        "timestampDivider" => {
+            let date = v["attrs"]["date"]
+                .as_str()
+                .ok_or("Неверная дата разделителя")?;
+            let label = date.split('-').rev().collect::<Vec<_>>().join(".");
+            return Ok(format!("<div data-timestamp-date=\"{}\" style=\"display:flex;align-items:center;gap:12px;clear:both;margin:20px 0;font:11px system-ui;color:#50515b\"><time datetime=\"{}\">{}</time><span style=\"flex:1;border-top:1px solid #c9c9d0\"></span></div>",escape(date),escape(date),escape(&label)));
+        }
         _ => return Err("Неизвестный блок".into()),
     };
     let prefix = if kind == "taskItem" {

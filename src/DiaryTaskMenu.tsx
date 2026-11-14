@@ -11,7 +11,12 @@ import { closeHistory, isHistoryTransaction } from "@tiptap/pm/history";
 declare global {
   interface Window {
     __notTaskMenu?: {
-      prepare: () => { label: string; token: string; enabled: boolean } | null;
+      prepare: () => {
+        label: string;
+        token: string;
+        enabled: boolean;
+        appendWithoutSelectAll?: boolean;
+      } | null;
       run: (token: string) => void;
     };
   }

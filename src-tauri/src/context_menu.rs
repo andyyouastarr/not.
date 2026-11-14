@@ -39,6 +39,7 @@ pub fn install(window: &tauri::WebviewWindow) -> tauri::Result<()> {
                                 let items = args.MenuItems()?;
                                 let mut count = 0;
                                 items.Count(&mut count)?;
+                                let mut insertion = None;
                                 for index in 0..count {
                                     let existing = items.GetValueAtIndex(index)?;
                                     let mut name = PWSTR::null();
@@ -46,6 +47,12 @@ pub fn install(window: &tauri::WebviewWindow) -> tauri::Result<()> {
                                     if CoTaskMemPWSTR::from(name).to_string() != "selectAll" {
                                         continue;
                                     }
+                                    insertion = Some(index + 1);
+                                    break;
+                                }
+                                // Image/atom menus may omit selectAll. Keep their built-ins
+                                // and append the task editor command in that case.
+                                if let Some(index) = insertion.or_else(|| (value["appendWithoutSelectAll"].as_bool() == Some(true)).then_some(count)) {
                                     let item = environment.CreateContextMenuItem(
                                         &HSTRING::from(label),
                                         None,
@@ -68,7 +75,7 @@ pub fn install(window: &tauri::WebviewWindow) -> tauri::Result<()> {
                                         )),
                                         &mut selected,
                                     )?;
-                                    items.InsertValueAtIndex(index + 1, &item)?;
+                                    items.InsertValueAtIndex(index, &item)?;
                                     #[cfg(debug_assertions)]
                                     if std::env::var_os("NOT_STUDIO_TEST_DATA_DIR").is_some() {
                                         let mut names = Vec::new();
@@ -77,10 +84,9 @@ pub fn install(window: &tauri::WebviewWindow) -> tauri::Result<()> {
                                             items.GetValueAtIndex(i)?.Name(&mut name)?;
                                             names.push(CoTaskMemPWSTR::from(name).to_string());
                                         }
-                                        let probe = serde_json::json!({"names":names,"insertedIndex":index+1,"label":label});
+                                        let probe = serde_json::json!({"names":names,"insertedIndex":index,"label":label});
                                         target.ExecuteScript(&HSTRING::from(format!("window.__notNativeMenuProbe={probe}")), &ExecuteScriptCompletedHandler::create(Box::new(|_,_| Ok(()))))?;
                                     }
-                                    break;
                                 }
                                 Ok(())
                             };

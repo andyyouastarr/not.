@@ -146,6 +146,12 @@ pub fn valid_id(id: &str) -> Result<()> {
         .map_err(|_| "Неверный идентификатор".into())
 }
 fn plain_text(node: &Value, out: &mut String) {
+    if node["type"] == "timestampDivider" {
+        if let Some(date) = node["attrs"]["date"].as_str() {
+            out.push_str(&date.split('-').rev().collect::<Vec<_>>().join("."));
+            out.push(' ');
+        }
+    }
     if let Some(t) = node.get("text").and_then(Value::as_str) {
         out.push_str(t);
         out.push(' ');
@@ -157,10 +163,12 @@ fn plain_text(node: &Value, out: &mut String) {
     }
 }
 fn has_structure(node: &Value) -> bool {
-    matches!(node["type"].as_str(), Some("table" | "horizontalRule"))
-        || node["content"]
-            .as_array()
-            .is_some_and(|c| c.iter().any(has_structure))
+    matches!(
+        node["type"].as_str(),
+        Some("table" | "horizontalRule" | "timestampDivider")
+    ) || node["content"]
+        .as_array()
+        .is_some_and(|c| c.iter().any(has_structure))
 }
 pub fn highlight_color(name: &str) -> Option<&'static str> {
     match name {
@@ -193,6 +201,7 @@ pub fn validate_document(doc: &Value) -> Result<Vec<String>> {
             "taskItem",
             "blockquote",
             "horizontalRule",
+            "timestampDivider",
             "hardBreak",
             "codeBlock",
             "table",
@@ -205,6 +214,20 @@ pub fn validate_document(doc: &Value) -> Result<Vec<String>> {
         .contains(&kind)
         {
             return Err("Неизвестный тип блока".into());
+        }
+        if kind == "timestampDivider" {
+            let date = v["attrs"]["date"]
+                .as_str()
+                .ok_or("Неверная дата разделителя")?;
+            let parsed = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                .map_err(|_| "Неверная дата разделителя")?;
+            if date.len() != 10
+                || parsed.format("%Y-%m-%d").to_string() != date
+                || v.get("content").is_some()
+                || v.get("text").is_some()
+            {
+                return Err("Неверный разделитель даты".into());
+            }
         }
         if kind == "image" || kind == "attachment" {
             let id = v
@@ -337,6 +360,7 @@ impl Vault {
         };
         let tx = sql(vault.conn.unchecked_transaction())?;
         crate::history::schema(&vault)?;
+        sql(vault.conn.execute_batch("PRAGMA user_version=6;"))?;
         sql(tx.commit())?;
         let Self {
             conn,
@@ -367,7 +391,7 @@ impl Vault {
         let master = crypto::unlock(&manifest, credential, recovery)?;
         let conn = connect(&root.join(DB), &master)?;
         let version: i64 = sql(conn.query_row("PRAGMA user_version", [], |r| r.get(0)))?;
-        if !(1..=5).contains(&version) {
+        if !(1..=6).contains(&version) {
             return Err("Версия базы не поддерживается. Обновите приложение.".into());
         }
         let vault = Self {
@@ -376,7 +400,7 @@ impl Vault {
             master,
             manifest,
         };
-        if version < 5 {
+        if version < 6 {
             let folder = root
                 .parent()
                 .ok_or("Неверный путь")?
@@ -402,7 +426,10 @@ impl Vault {
             if version < 4 {
                 crate::assignees::schema(&tx)?;
             }
-            crate::history::schema(&vault)?;
+            if version < 5 {
+                crate::history::schema(&vault)?;
+            }
+            sql(vault.conn.execute_batch("PRAGMA user_version=6;"))?;
             sql(tx.commit())?;
         }
         Ok(vault)
@@ -936,6 +963,50 @@ mod tests {
         v.save(entry("Подтверждённая запись после сбоя")).unwrap();
         fs::write(root.parent().unwrap().join("ready"), b"saved").unwrap();
         std::thread::sleep(Duration::from_secs(30));
+    }
+    #[test]
+    fn timestamp_roundtrip_migration_and_validation() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("v");
+        let (mut vault, key) = Vault::create(&root, "timestamp test password").unwrap();
+        let before = vault.save(entry("Before migration")).unwrap();
+        vault.conn.execute_batch("PRAGMA user_version=5;").unwrap();
+        drop(vault);
+        let mut vault = Vault::open(&root, "timestamp test password", false).unwrap();
+        let version: i64 = vault
+            .conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 6);
+        assert_eq!(vault.get(&before.id).unwrap().revision, before.revision);
+        assert_eq!(
+            fs::read_dir(dir.path().join("migration-backups"))
+                .unwrap()
+                .count(),
+            1
+        );
+        let node = serde_json::json!({"type":"timestampDivider","attrs":{"date":"2026-11-01"}});
+        let mut e = entry("");
+        e.document = serde_json::json!({"type":"doc","content":[node]});
+        let saved = vault.save(e.clone()).unwrap();
+        assert_eq!(saved.document, e.document);
+        assert_eq!(vault.list("01.11.2026", "all", "", 0).unwrap().len(), 1);
+        let output = dir.path().join("html");
+        fs::create_dir(&output).unwrap();
+        let exported = crate::export::export(&vault, &saved.id, &output).unwrap();
+        let html = fs::read_to_string(Path::new(&exported).join("index.html")).unwrap();
+        assert!(html.contains("data-timestamp-date=\"2026-11-01\""));
+        assert!(html.contains("01.11.2026"));
+        let backup = dir.path().join("timestamp.notbackup");
+        vault.backup(&backup).unwrap();
+        let copy = Vault::restore(&backup, &dir.path().join("copy"), &key, true).unwrap();
+        assert_eq!(copy.list("01.11.2026", "all", "", 0).unwrap().len(), 1);
+        for date in ["2026-02-29", "2026-13-01", "2026-11-31", "2026-1-01", ""] {
+            e.document["content"][0]["attrs"]["date"] = serde_json::json!(date);
+            assert!(validate_document(&e.document).is_err());
+        }
+        e.document["content"][0]["attrs"]["date"] = serde_json::json!("2028-02-29");
+        assert!(validate_document(&e.document).is_ok());
     }
     #[test]
     fn acknowledged_save_survives_killed_process() {

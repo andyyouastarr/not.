@@ -64,6 +64,10 @@ export interface Commands {
     import("./planner/types").Assignee[],
   ];
   planner: [{}, import("./planner/types").Board];
+  savePlannerDraft: [
+    { draft: import("./planner/types").Draft | null },
+    boolean,
+  ];
   plannerChange: [
     { change: import("./planner/types").Change },
     import("./planner/types").Board,
