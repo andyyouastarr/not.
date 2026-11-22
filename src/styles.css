@@ -1242,6 +1242,7 @@ kbd {
   border-radius: 8px;
 }
 .node-image {
+  min-width: min(32px, 100%);
   max-width: 100%;
   clear: both;
   position: relative;
@@ -1262,6 +1263,27 @@ kbd {
 }
 .node-image[data-image-layout="block"] {
   float: none;
+}
+.node-image[data-wrap-below="true"] {
+  float: none;
+  max-width: 100%;
+  margin: 16px 0;
+}
+.node-image[data-wrap-below="true"][data-image-layout="right"] {
+  margin-left: auto;
+}
+.node-image img {
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+.image-preview {
+  pointer-events: none;
+  outline: 2px solid var(--accent);
+  opacity: .85;
+}
+.image-preview .attachment-node {
+  outline: none;
 }
 .image-frame {
   position: relative;

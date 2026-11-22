@@ -244,7 +244,10 @@ pub fn validate_document(doc: &Value) -> Result<Vec<String>> {
         }
         if kind == "image" {
             if let Some(width) = v.pointer("/attrs/widthPercent").filter(|x| !x.is_null()) {
-                if !width.as_f64().is_some_and(|w| (15.0..=100.0).contains(&w)) {
+                if !width
+                    .as_f64()
+                    .is_some_and(|w| w.is_finite() && w > 0.0 && w <= 100.0)
+                {
                     return Err("Неверный размер изображения".into());
                 }
             }
@@ -361,7 +364,7 @@ impl Vault {
         let tx = sql(vault.conn.unchecked_transaction())?;
         crate::history::schema(&vault)?;
         crate::planner_trash::schema(&vault.conn)?;
-        sql(vault.conn.execute_batch("PRAGMA user_version=7;"))?;
+        sql(vault.conn.execute_batch("PRAGMA user_version=8;"))?;
         sql(tx.commit())?;
         let Self {
             conn,
@@ -392,7 +395,7 @@ impl Vault {
         let master = crypto::unlock(&manifest, credential, recovery)?;
         let conn = connect(&root.join(DB), &master)?;
         let version: i64 = sql(conn.query_row("PRAGMA user_version", [], |r| r.get(0)))?;
-        if !(1..=7).contains(&version) {
+        if !(1..=8).contains(&version) {
             return Err("Версия базы не поддерживается. Обновите приложение.".into());
         }
         let vault = Self {
@@ -401,7 +404,7 @@ impl Vault {
             master,
             manifest,
         };
-        if version < 7 {
+        if version < 8 {
             let folder = root
                 .parent()
                 .ok_or("Неверный путь")?
@@ -430,8 +433,10 @@ impl Vault {
             if version < 5 {
                 crate::history::schema(&vault)?;
             }
-            crate::planner_trash::schema(&vault.conn)?;
-            sql(vault.conn.execute_batch("PRAGMA user_version=7;"))?;
+            if version < 7 {
+                crate::planner_trash::schema(&vault.conn)?;
+            }
+            sql(vault.conn.execute_batch("PRAGMA user_version=8;"))?;
             sql(tx.commit())?;
         }
         Ok(vault)
@@ -980,7 +985,7 @@ mod tests {
             .conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 7);
+        assert_eq!(version, 8);
         assert_eq!(vault.get(&before.id).unwrap().revision, before.revision);
         assert_eq!(
             fs::read_dir(dir.path().join("migration-backups"))
@@ -1182,6 +1187,118 @@ mod tests {
         let html = fs::read_to_string(PathBuf::from(export).join("index.html")).unwrap();
         assert!(html.contains("journal-image right\" style=\"width:42%"));
         assert!(html.contains("Текст рядом"));
+    }
+    #[test]
+    fn fractional_image_sizes_roundtrip_export_and_restore() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut v, key) =
+            Vault::create(&dir.path().join("vault"), "fractional image password").unwrap();
+        let source = dir.path().join("image.png");
+        fs::write(&source, b"\x89PNG\r\n\x1a\nsynthetic export test").unwrap();
+        let a = v.add_attachment(&source).unwrap();
+        let mut e = entry("Text beside image");
+        let image = serde_json::json!({"type":"image","attrs":{"attachmentId":a.id,"widthPercent":3.125,"layout":"right"}});
+        e.document["content"]
+            .as_array_mut()
+            .unwrap()
+            .insert(0, image);
+        for width in [0.001, 3.125, 14.99, 75.5, 100.0] {
+            let mut document = e.document.clone();
+            document["content"][0]["attrs"]["widthPercent"] = serde_json::json!(width);
+            assert!(validate_document(&document).is_ok(), "width {width}");
+        }
+        for width in [
+            serde_json::json!(0),
+            serde_json::json!(-0.1),
+            serde_json::json!(100.001),
+            serde_json::json!("NaN"),
+            serde_json::json!("Infinity"),
+            serde_json::json!(true),
+        ] {
+            let mut document = e.document.clone();
+            document["content"][0]["attrs"]["widthPercent"] = width;
+            assert!(validate_document(&document).is_err());
+        }
+        // Non-finite numeric JSON is rejected by the parser before validation.
+        assert!(serde_json::from_str::<Value>("1e9999").is_err());
+        let saved = v.save(e).unwrap();
+        assert_eq!(saved.document["content"][0]["attrs"]["widthPercent"], 3.125);
+        let export = crate::export::export(&v, &saved.id, dir.path()).unwrap();
+        let html = fs::read_to_string(PathBuf::from(export).join("index.html")).unwrap();
+        assert!(html.contains("journal-image right\" style=\"width:3.125%"));
+        assert!(html.contains("container-type:inline-size"));
+        assert!(html.contains("@container (width < 234px)"));
+        let archive = dir.path().join("images.notbackup");
+        v.backup(&archive).unwrap();
+        let restored = Vault::restore(&archive, &dir.path().join("restored"), &key, true).unwrap();
+        assert_eq!(restored.get(&saved.id).unwrap().document, saved.document);
+        assert_eq!(
+            restored.read_attachment(&a.id).unwrap(),
+            v.read_attachment(&a.id).unwrap()
+        );
+    }
+    #[test]
+    fn image_schema_v7_upgrade_preserves_documents_and_credentials() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("vault");
+        let password = "image migration password";
+        let (mut v, key) = Vault::create(&root, password).unwrap();
+        let saved = v.save(entry("Old document unchanged")).unwrap();
+        v.conn.execute_batch("PRAGMA user_version=7;").unwrap();
+        let original: String = v
+            .conn
+            .query_row(
+                "SELECT document FROM entries WHERE id=?",
+                [&saved.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        drop(v);
+        let v = Vault::open(&root, password, false).unwrap();
+        assert_eq!(
+            v.conn
+                .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            8
+        );
+        let migrated: String = v
+            .conn
+            .query_row(
+                "SELECT document FROM entries WHERE id=?",
+                [&saved.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(migrated, original);
+        assert_eq!(v.get(&saved.id).unwrap().revision, saved.revision);
+        let backups: Vec<_> = fs::read_dir(dir.path().join("migration-backups"))
+            .unwrap()
+            .map(|x| x.unwrap().path())
+            .collect();
+        assert_eq!(backups.len(), 1);
+        let restored =
+            Vault::restore(&backups[0], &dir.path().join("restored"), &key, true).unwrap();
+        assert_eq!(restored.get(&saved.id).unwrap().document, saved.document);
+        // Restoring the old copy also migrates its separate profile. Reopening
+        // the already upgraded original must not create another backup.
+        let backup_count = fs::read_dir(dir.path().join("migration-backups"))
+            .unwrap()
+            .count();
+        drop(v);
+        assert_eq!(
+            Vault::open(&root, &key, true)
+                .unwrap()
+                .get(&saved.id)
+                .unwrap()
+                .revision,
+            saved.revision
+        );
+        assert_eq!(
+            fs::read_dir(dir.path().join("migration-backups"))
+                .unwrap()
+                .count(),
+            backup_count
+        );
     }
     #[test]
     fn backup_validation_rejects_corruption_and_paths() {

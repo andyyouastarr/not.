@@ -7,8 +7,7 @@ import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import { TableKit } from "@tiptap/extension-table";
 import Placeholder from "@tiptap/extension-placeholder";
-import { NodeSelection, TextSelection } from "@tiptap/pm/state";
-import type { EditorView } from "@tiptap/pm/view";
+import { TextSelection } from "@tiptap/pm/state";
 import { closeHistory } from "@tiptap/pm/history";
 import {
   Plus,
@@ -37,6 +36,7 @@ import { api, errorText, native } from "./api";
 import { ru } from "./ru";
 import type { Attachment } from "./types";
 import AttachmentView from "./AttachmentView";
+import { ImageInteraction, imageWidth } from "./imageInteraction";
 import { HighlightMark, HighlightTools } from "./Highlight";
 import { externalUrl, openLink } from "./links";
 import { importImage, clipboardFiles } from "./pasteImage";
@@ -44,30 +44,12 @@ import { taskLinkExtension, type DiaryLinkActions } from "./taskLinks";
 import { useDiaryTaskMenu, UnlinkConfirmation } from "./DiaryTaskMenu";
 import { TimestampDivider, useTimestampMenu } from "./TimestampDivider";
 
-function imageDropTarget(view: EditorView, x: number, y: number) {
-  const coords = view.posAtCoords({ left: x, top: y });
-  if (!coords) return null;
-  const resolved = view.state.doc.resolve(coords.pos);
-  const pos = resolved.depth ? resolved.before(1) : coords.pos;
-  const element = view.nodeDOM(pos) as HTMLElement | null;
-  const bounds =
-    element?.getBoundingClientRect() || view.dom.getBoundingClientRect();
-  const canvas = view.dom.getBoundingClientRect();
-  return {
-    pos,
-    layout: x < canvas.left + canvas.width / 2 ? "left" : "right",
-    top: bounds.top,
-    left: canvas.left,
-    width: canvas.width,
-  };
-}
-
 function attachmentNode(name: "image" | "attachment") {
   return Node.create({
     name,
     group: "block",
     atom: true,
-    draggable: true,
+    draggable: name !== "image",
     addAttributes() {
       return {
         attachmentId: { default: "" },
@@ -98,7 +80,7 @@ function attachmentNode(name: "image" | "attachment") {
                 )
                   ? node.attrs.layout
                   : "block",
-                style: `width: ${Math.max(15, Math.min(100, Number(node.attrs.widthPercent) || 100))}%`,
+                style: `width: ${imageWidth(node.attrs.widthPercent)}%`,
               }
             : {},
       });
@@ -183,11 +165,6 @@ export default function JournalEditor({
     [slash, setSlash] = useState(false),
     [link, setLink] = useState<string | null>(null),
     [, redraw] = useState(0);
-  const [dropCue, setDropCue] = useState<{
-    top: number;
-    left: number;
-    width: number;
-  } | null>(null);
   const pasteSequence = useRef(0);
   const pasteFiles = (files: Blob[] | Promise<Blob[]>) => {
     const current = editor!;
@@ -248,6 +225,7 @@ export default function JournalEditor({
   const editor = useEditor({
     extensions: [
       TimestampDivider,
+      ImageInteraction,
       taskLinkExtension({
         actions: () => linkActions.current,
         confirm: (transaction, count) => setUnlink({ transaction, count }),
@@ -347,41 +325,6 @@ export default function JournalEditor({
           );
           return true;
         },
-        dragover: (view, event) => {
-          if (
-            !view.editable ||
-            !event.dataTransfer?.types.includes("application/x-not-image")
-          )
-            return false;
-          event.preventDefault();
-          event.dataTransfer.dropEffect = "move";
-          const target = imageDropTarget(view, event.clientX, event.clientY);
-          setDropCue(
-            target
-              ? {
-                  top: target.top,
-                  left:
-                    target.left +
-                    (target.layout === "right" ? target.width / 2 : 0),
-                  width: target.width / 2,
-                }
-              : null,
-          );
-          return true;
-        },
-        dragleave: (_view, event) => {
-          if (
-            !(event.currentTarget as HTMLElement).contains(
-              event.relatedTarget as globalThis.Node | null,
-            )
-          )
-            setDropCue(null);
-          return false;
-        },
-        dragend: () => {
-          setDropCue(null);
-          return false;
-        },
       },
       attributes: {
         class: "journal-prose",
@@ -435,53 +378,7 @@ export default function JournalEditor({
         return false;
       },
       handleDrop: (view, event) => {
-        setDropCue(null);
         if (!view.editable) return false;
-        const imageData = event.dataTransfer?.getData(
-          "application/x-not-image",
-        );
-        if (imageData) {
-          event.preventDefault();
-          try {
-            const { pos: from, id } = JSON.parse(imageData);
-            if (
-              !Number.isInteger(from) ||
-              from < 0 ||
-              from >= view.state.doc.content.size
-            )
-              return true;
-            const node = view.state.doc.nodeAt(from);
-            const target = imageDropTarget(view, event.clientX, event.clientY);
-            if (
-              !node ||
-              node.type.name !== "image" ||
-              node.attrs.attachmentId !== id ||
-              !target
-            )
-              return true;
-            const width = Number(node.attrs.widthPercent) || 100;
-            const layout = width > 75 ? "block" : target.layout;
-            const tr = closeHistory(view.state.tr);
-            let to = target.pos;
-            if (to === from)
-              tr.setNodeMarkup(from, undefined, { ...node.attrs, layout });
-            else {
-              tr.delete(from, from + node.nodeSize);
-              if (to > from) to -= node.nodeSize;
-              tr.insert(to, node.type.create({ ...node.attrs, layout }));
-            }
-            const after = to + node.nodeSize;
-            if (tr.doc.nodeAt(after)?.type.name !== "paragraph")
-              tr.insert(after, view.state.schema.nodes.paragraph.create());
-            tr.setSelection(NodeSelection.create(tr.doc, to));
-            view.dispatch(tr.scrollIntoView());
-            view.dispatch(closeHistory(view.state.tr));
-            view.focus();
-          } catch {
-            /* Ignore malformed or cross-document drags. */
-          }
-          return true;
-        }
         const position = event.dataTransfer?.getData("application/x-not-block");
         if (!position) return false;
         event.preventDefault();
@@ -622,13 +519,6 @@ export default function JournalEditor({
         <div className="paste-status" role="status">
           {ru.imagePasting}
         </div>
-      )}
-      {dropCue && (
-        <div
-          className="image-drop-cue"
-          style={{ ...dropCue, height: 56 }}
-          aria-hidden="true"
-        />
       )}
       {editable && (
         <div

@@ -1,10 +1,15 @@
-import type { Locator, Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 export async function pointerDrag(
   page: Page,
   card: Locator,
   target: Locator,
   fraction = 0.5,
 ) {
+  // A confirmed position can render while the preceding move still hides its
+  // source card. Start the next physical gesture only after that layer is gone.
+  await expect(page.locator(".task-drag-overlay")).toHaveCount(0);
+  await expect(card).toBeVisible();
+  await expect(target).toBeVisible();
   const from = await card.boundingBox(),
     to = await target.boundingBox();
   if (!from || !to) throw Error("Missing drag geometry");

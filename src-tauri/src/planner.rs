@@ -652,7 +652,7 @@ mod tests {
                 .conn
                 .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            7
+            8
         );
         assert!(std::fs::read_dir(dir.path().join("migration-backups"))
             .unwrap()

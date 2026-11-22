@@ -342,9 +342,12 @@ try {
     const paragraph = page.locator(".node-image + p");
     await paragraph.scrollIntoViewIfNeeded();
     const target = await paragraph.boundingBox();
-    await picture.dragTo(paragraph, {
-      targetPosition: { x: target.width - 15, y: 12 },
-    });
+    const source = await picture.boundingBox();
+    await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(target.x + target.width - 15, target.y + 12, { steps: 12 });
+    await page.locator(".image-preview").waitFor();
+    await page.mouse.up();
     assert.equal(
       await page.locator(".node-image").getAttribute("data-image-layout"),
       "right",

@@ -2,14 +2,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PointerEvent, KeyboardEvent } from "react";
 import { NodeViewWrapper } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
-import { TextSelection } from "@tiptap/pm/state";
 import { closeHistory } from "@tiptap/pm/history";
+import { TextSelection } from "@tiptap/pm/state";
 import { File, Download, ImagePlus } from "lucide-react";
 import { api, errorText } from "./api";
 import { ru } from "./ru";
+import { imageWidth, applyImageGeometry } from "./imageInteraction";
 
 type Layout = "block" | "left" | "right";
-const clamp = (value: number) => Math.max(15, Math.min(100, Math.round(value)));
 
 export default function AttachmentView({
   node,
@@ -28,9 +28,14 @@ export default function AttachmentView({
     container: number;
     sign: number;
     value: number;
+    pointer: number;
+    handle: HTMLButtonElement;
   } | null>(null);
   const image = node.type.name === "image";
-  const width = clamp(Number(node.attrs.widthPercent) || 100);
+  const width = imageWidth(node.attrs.widthPercent);
+  const minimum = () =>
+    Math.min(100, 3200 / Math.max(1, editor.view.dom.clientWidth));
+  const clamp = (value: number) => Math.max(minimum(), Math.min(100, value));
   const layout: Layout = ["left", "right"].includes(node.attrs.layout)
     ? node.attrs.layout
     : "block";
@@ -60,18 +65,61 @@ export default function AttachmentView({
 
   useLayoutEffect(() => {
     const outer = frame.current?.closest<HTMLElement>(".node-image");
-    if (outer) {
-      outer.style.width = `${previewWidth ?? width}%`;
-      outer.dataset.imageLayout =
-        previewWidth === null
-          ? layout
-          : previewWidth > 75
-            ? "block"
-            : layout === "right"
-              ? "right"
-              : "left";
+    if (!outer) return;
+    const update = () =>
+      applyImageGeometry(
+        outer,
+        previewWidth ?? width,
+        previewWidth !== null && layout === "block" ? "left" : layout,
+        editor.view.dom.clientWidth,
+      );
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(editor.view.dom);
+    return () => observer.disconnect();
+  }, [previewWidth, width, layout, editor]);
+
+  useEffect(() => {
+    const cancel = () => {
+      const current = drag.current;
+      drag.current = null;
+      if (current?.handle.hasPointerCapture(current.pointer))
+        current.handle.releasePointerCapture(current.pointer);
+      setPreviewWidth(null);
+    };
+    const key = (event: globalThis.KeyboardEvent) => {
+      if (drag.current && event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        cancel();
+      }
+    };
+    const transaction = ({
+      transaction,
+    }: {
+      transaction: import("@tiptap/pm/state").Transaction;
+    }) => {
+      if (transaction.docChanged && drag.current) cancel();
+    };
+    window.addEventListener("blur", cancel);
+    window.addEventListener("keydown", key, true);
+    editor.on("transaction", transaction);
+    return () => {
+      const current = drag.current;
+      drag.current = null;
+      if (current?.handle.hasPointerCapture(current.pointer))
+        current.handle.releasePointerCapture(current.pointer);
+      window.removeEventListener("blur", cancel);
+      window.removeEventListener("keydown", key, true);
+      editor.off("transaction", transaction);
+    };
+  }, [editor]);
+  useEffect(() => {
+    if (!editor.isEditable) {
+      drag.current = null;
+      setPreviewWidth(null);
     }
-  }, [previewWidth, width, layout]);
+  });
 
   const commit = (attrs: Record<string, unknown>) => {
     const pos = getPos();
@@ -86,25 +134,26 @@ export default function AttachmentView({
     editor.view.dispatch(tr);
     editor.view.dispatch(closeHistory(editor.state.tr));
   };
-  const writeBeside = () => {
+  const resize = (value: number) => {
+    const next = clamp(value);
+    const side = layout === "block" ? "left" : layout;
+    if (next === width && side === layout) return;
     const pos = getPos();
-    if (!editor.isEditable || typeof pos !== "number") return;
+    if (!editor.isEditable || editor.isDestroyed || typeof pos !== "number")
+      return;
     const current = editor.state.doc.nodeAt(pos);
-    if (!current) return;
+    if (!current || current.type.name !== "image") return;
+    const tr = closeHistory(editor.state.tr).setNodeMarkup(pos, undefined, {
+      ...current.attrs,
+      widthPercent: next,
+      layout: side,
+    });
     const after = pos + current.nodeSize;
-    const tr = editor.state.tr;
     if (tr.doc.nodeAt(after)?.type.name !== "paragraph")
       tr.insert(after, editor.schema.nodes.paragraph.create());
     tr.setSelection(TextSelection.create(tr.doc, after + 1));
-    editor.view.dispatch(tr.scrollIntoView());
-    editor.view.focus();
-  };
-  const resize = (value: number) => {
-    const next = clamp(value);
-    commit({
-      widthPercent: next,
-      layout: next > 75 ? "block" : layout === "right" ? "right" : "left",
-    });
+    editor.view.dispatch(tr);
+    editor.view.dispatch(closeHistory(editor.state.tr));
   };
   const startResize = (
     event: PointerEvent<HTMLButtonElement>,
@@ -121,6 +170,8 @@ export default function AttachmentView({
       container: outer.parentElement.clientWidth,
       sign,
       value: width,
+      pointer: event.pointerId,
+      handle: event.currentTarget,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -145,17 +196,23 @@ export default function AttachmentView({
       event.currentTarget.releasePointerCapture(event.pointerId);
     if (!cancel) {
       resize(current.value);
-      writeBeside();
+      editor.view.focus();
     }
     setPreviewWidth(null);
   };
   const resizeKey = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      if (event.shiftKey) editor.commands.redo();
+      else editor.commands.undo();
+      return;
+    }
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
     event.stopPropagation();
     resize(
       event.key === "Home"
-        ? 15
+        ? minimum()
         : event.key === "End"
           ? 100
           : width + (event.key === "ArrowLeft" ? -5 : 5),
@@ -186,22 +243,8 @@ export default function AttachmentView({
               <img
                 src={url}
                 alt={node.attrs.name || ""}
-                draggable={editor.isEditable}
+                draggable={false}
                 title={ru.imageDragHint}
-                onDragStart={(event) => {
-                  const pos = getPos();
-                  if (!editor.isEditable || typeof pos !== "number") {
-                    event.preventDefault();
-                    return;
-                  }
-                  event.stopPropagation();
-                  event.dataTransfer.clearData();
-                  event.dataTransfer.setData(
-                    "application/x-not-image",
-                    JSON.stringify({ pos, id: node.attrs.attachmentId }),
-                  );
-                  event.dataTransfer.effectAllowed = "move";
-                }}
                 onError={() => setError(ru.imageDecodeError)}
               />
             ) : (
@@ -225,7 +268,7 @@ export default function AttachmentView({
                       aria-label={
                         sign < 0 ? ru.imageResizeLeft : ru.imageResizeRight
                       }
-                      aria-valuemin={15}
+                      aria-valuemin={minimum()}
                       aria-valuemax={100}
                       aria-valuenow={previewWidth ?? width}
                       aria-valuetext={`${previewWidth ?? width}%`}

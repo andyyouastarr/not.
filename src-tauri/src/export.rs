@@ -59,16 +59,17 @@ fn render(v: &Value, vault: &Vault, assets: &Path) -> Result<String> {
         let name = format!("{id}.{ext}");
         vault.write_attachment(id, &assets.join(&name))?;
         return Ok(if kind == "image" {
-            let width = v["attrs"]["widthPercent"]
-                .as_f64()
-                .unwrap_or(100.0)
-                .clamp(15.0, 100.0);
+            // The document was validated before rendering. Keep fractional and
+            // sub-15% widths; the visual minimum belongs to the layout, not data.
+            let width = v["attrs"]["widthPercent"].as_f64().unwrap_or(100.0);
             let layout = match v["attrs"]["layout"].as_str() {
                 Some("left") => "left",
                 Some("right") => "right",
                 _ => "block",
             };
-            format!("<figure class=\"journal-image {layout}\" style=\"width:{width}%\"><img src=\"assets/{name}\" alt=\"{}\"><figcaption>{}</figcaption></figure>",escape(&a.name),escape(&a.name))
+            let layout_id = uuid::Uuid::new_v4();
+            let flow_style = image_flow_style(width, layout, &layout_id.to_string());
+            format!("{flow_style}<figure class=\"journal-image {layout}\" style=\"width:{width}%\" data-image-layout-id=\"{layout_id}\"><img src=\"assets/{name}\" alt=\"{}\"><figcaption>{}</figcaption></figure>",escape(&a.name),escape(&a.name))
         } else {
             format!(
                 "<p><a download=\"{}\" href=\"assets/{name}\">{}</a></p>",
@@ -122,6 +123,25 @@ fn render(v: &Value, vault: &Vault, assets: &Path) -> Result<String> {
     };
     Ok(format!("<{tag}>{prefix}{inner}</{tag}>"))
 }
+// Match the editor's 32px image minimum and 180px minimum text column with a
+// 22px gap. Container queries keep exported HTML responsive without JavaScript.
+fn image_flow_style(width: f64, layout: &str, id: &str) -> String {
+    if layout == "block" {
+        return String::new();
+    }
+    let condition = if width >= 100.0 {
+        "width >= 0px".to_owned()
+    } else {
+        let threshold = (202.0 / (1.0 - width / 100.0)).max(234.0);
+        format!("width < {threshold}px")
+    };
+    let margin = if layout == "right" {
+        "margin-left:auto;margin-right:0"
+    } else {
+        "margin-left:0;margin-right:auto"
+    };
+    format!("<style>@container ({condition}){{.journal-image[data-image-layout-id=\"{id}\"]{{float:none;{margin}}}}}</style>")
+}
 pub fn export(vault: &Vault, id: &str, parent: &Path) -> Result<String> {
     let entry = vault.get(id)?;
     vault::validate_document(&entry.document)?;
@@ -129,7 +149,7 @@ pub fn export(vault: &Vault, id: &str, parent: &Path) -> Result<String> {
     let temp = tempfile::tempdir_in(parent).map_err(|_| "Не удалось создать папку экспорта")?;
     fs::create_dir(temp.path().join("assets")).map_err(|_| "Не удалось создать папку вложений")?;
     let body = render(&entry.document, vault, &temp.path().join("assets"))?;
-    let html=format!("<!doctype html><html lang=\"ru\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src 'self'; style-src 'unsafe-inline'\"><title>{}</title><style>body{{max-width:760px;margin:60px auto;padding:0 24px;font:18px/1.7 system-ui;color:#222}}time{{color:#777}}img{{max-width:100%;height:auto}}.journal-image{{clear:both;margin:22px 0;max-width:100%}}.journal-image img{{width:100%;display:block}}.journal-image.left{{float:left;margin:0 22px 16px 0;max-width:calc(100% - 22px)}}.journal-image.right{{float:right;margin:0 0 16px 22px;max-width:calc(100% - 22px)}}figcaption{{font-size:12px;overflow-wrap:anywhere}}table,hr,pre{{clear:both}}body{{display:flow-root}}table{{border-collapse:collapse}}td,th{{border:1px solid #bbb;padding:8px}}blockquote{{border-left:3px solid #999;padding-left:20px}}pre{{white-space:pre-wrap}}a{{color:#6653aa}}</style><time>{}</time><h1>{}</h1>{body}</html>",escape(&entry.title),escape(&entry.date),escape(&entry.title));
+    let html=format!("<!doctype html><html lang=\"ru\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src 'self'; style-src 'unsafe-inline'\"><title>{}</title><style>body{{max-width:760px;margin:60px auto;padding:0 24px;font:18px/1.7 system-ui;color:#222;container-type:inline-size}}time{{color:#777}}img{{max-width:100%;height:auto}}.journal-image{{clear:both;margin:22px 0;min-width:min(32px,100%);max-width:100%}}.journal-image img{{width:100%;display:block}}.journal-image.left{{float:left;margin:0 22px 16px 0}}.journal-image.right{{float:right;margin:0 0 16px 22px}}figcaption{{font-size:12px;overflow-wrap:anywhere}}table,hr,pre{{clear:both}}body{{display:flow-root}}table{{border-collapse:collapse}}td,th{{border:1px solid #bbb;padding:8px}}blockquote{{border-left:3px solid #999;padding-left:20px}}pre{{white-space:pre-wrap}}a{{color:#6653aa}}</style><time>{}</time><h1>{}</h1>{body}</html>",escape(&entry.title),escape(&entry.date),escape(&entry.title));
     vault::atomic(&temp.path().join("index.html"), html.as_bytes())?;
     crate::vault::rename_directory(temp.path(), &dest)?;
     Ok(dest.to_string_lossy().into_owned())
