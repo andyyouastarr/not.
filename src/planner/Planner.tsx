@@ -9,6 +9,7 @@ import {
 } from "react";
 import { Fragment } from "react";
 import CardMenu from "./CardMenu";
+import { useCardContextMenu } from "./useCardContextMenu";
 import { useTaskDrag } from "./useTaskDrag";
 import { Plus, Settings, Lock, PanelLeftOpen } from "lucide-react";
 import { api, errorText, localDate } from "../api";
@@ -109,6 +110,18 @@ export default forwardRef<PlannerHandle, Props>(function Planner(
       setEditing(newDraft());
     }
   };
+  useCardContextMenu(
+    board?.tasks || [],
+    busy || !!board?.draft || !!editing,
+    (task) =>
+      void change({
+        action: "flag",
+        id: task.id,
+        revision: task.revision,
+        field: "deleted",
+        value: true,
+      }),
+  );
   useImperativeHandle(ref, () => ({
     create,
     flush: async () => {
@@ -486,6 +499,12 @@ export default forwardRef<PlannerHandle, Props>(function Planner(
           </div>
           <button onClick={onSettings}>Настроить стадии</button>
         </header>
+        {view === "trash" && (
+          <p className="planner-empty">
+            Задачи удаляются безвозвратно через 30 дней. Очистка выполняется при
+            разблокировке приложения.
+          </p>
+        )}
         {error && (
           <div className="planner-error" role="alert">
             {error}

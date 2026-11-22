@@ -9,6 +9,7 @@ mod idle;
 mod keyboard;
 mod links;
 mod planner;
+mod planner_trash;
 mod session;
 mod task_links;
 mod vault;
@@ -291,6 +292,7 @@ fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Valu
             let result = vault::Vault::open(&s.root, &credential, recovery);
             credential.zeroize();
             let v = result?;
+            v.purge_planner_trash(chrono::Utc::now().timestamp())?;
             s.idle_minutes = idle::minutes(&v.settings()?);
             s.vault = Some(v);
             s.activity = Instant::now();

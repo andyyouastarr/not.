@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import TaskHistory from "./TaskHistory";
+import { ru } from "../ru";
 import JournalEditor from "../Editor";
 import { api, errorText } from "../api";
 import type { Board, Draft } from "./types";
@@ -397,6 +398,7 @@ export default forwardRef<
         </div>
         <div className="task-description">
           <TaskDescriptionEditor
+            placeholder={ru.taskBodyPlaceholder}
             timestampMenu={tab === "edit" && !busy && !assigneeSettings}
             document={draft.document}
             editable={!saving && !readOnly}

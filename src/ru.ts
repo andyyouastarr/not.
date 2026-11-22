@@ -41,8 +41,9 @@ export const ru = {
   calendar: "Перейти к дате",
   clearDate: "Сбросить дату",
   untitled: "Без названия",
-  titlePlaceholder: "Название — если хочется",
-  bodyPlaceholder: "О чём хочется написать?",
+  titlePlaceholder: "Название",
+  bodyPlaceholder: "Здесь будет ваш текст",
+  taskBodyPlaceholder: "О чём хочется написать?",
   emptyTitle: "Здесь начинается ваша история",
   emptyBody:
     "Мысль, встреча, маленькое открытие. Сохраните то, что хочется помнить.",

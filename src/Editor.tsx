@@ -151,6 +151,7 @@ function moveBlock(editor: EditorType, direction: number) {
   editor.view.focus();
 }
 type Props = {
+  placeholder?: string;
   timestampMenu?: boolean;
   diaryLinks?: DiaryLinkActions;
   onReady?: (editor: EditorType) => void;
@@ -161,6 +162,7 @@ type Props = {
   onImport: (task: Promise<void>) => void;
 };
 export default function JournalEditor({
+  placeholder = ru.bodyPlaceholder,
   document,
   editable,
   onChange,
@@ -292,7 +294,7 @@ export default function JournalEditor({
         },
       }),
       TableKit.configure({ table: { resizable: true } }),
-      Placeholder.configure({ placeholder: ru.bodyPlaceholder }),
+      Placeholder.configure({ placeholder }),
       attachmentNode("image"),
       attachmentNode("attachment"),
     ],

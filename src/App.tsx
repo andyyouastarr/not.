@@ -1060,6 +1060,7 @@ export default function App() {
                         </div>
                       )}
                       <JournalEditor
+                        timestampMenu
                         diaryLinks={linked.actions}
                         onReady={linked.ready}
                         key={entry.id}
@@ -1264,7 +1265,7 @@ export default function App() {
               <ChevronRight size={16} />
             </button>
           </div>
-          <p className="version">not. studio · 0.6.3</p>
+          <p className="version">not. studio · 0.6.4</p>
         </Modal>
       )}
       {modal === "restore" && (

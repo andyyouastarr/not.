@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { registerContextMenu } from "./contextMenu";
 import type { Editor } from "@tiptap/react";
 import {
   selectedLinks,
@@ -16,6 +17,12 @@ declare global {
         token: string;
         enabled: boolean;
         appendWithoutSelectAll?: boolean;
+        additional?: {
+          label: string;
+          token: string;
+          enabled: boolean;
+          appendWithoutSelectAll?: boolean;
+        }[];
       } | null;
       run: (token: string) => void;
     };
@@ -117,13 +124,13 @@ export function useDiaryTaskMenu(
           .catch((e) => onError(String(e)));
       },
     };
-    window.__notTaskMenu = bridge;
+    const unregister = registerContextMenu(bridge, 10);
     return () => {
       pending = null;
       eligible = false;
       editor.off("transaction", map);
       document.removeEventListener("contextmenu", context, true);
-      if (window.__notTaskMenu === bridge) delete window.__notTaskMenu;
+      unregister();
     };
   }, [editor, !!actions]);
 }

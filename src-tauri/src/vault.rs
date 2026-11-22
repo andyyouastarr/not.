@@ -360,7 +360,8 @@ impl Vault {
         };
         let tx = sql(vault.conn.unchecked_transaction())?;
         crate::history::schema(&vault)?;
-        sql(vault.conn.execute_batch("PRAGMA user_version=6;"))?;
+        crate::planner_trash::schema(&vault.conn)?;
+        sql(vault.conn.execute_batch("PRAGMA user_version=7;"))?;
         sql(tx.commit())?;
         let Self {
             conn,
@@ -391,7 +392,7 @@ impl Vault {
         let master = crypto::unlock(&manifest, credential, recovery)?;
         let conn = connect(&root.join(DB), &master)?;
         let version: i64 = sql(conn.query_row("PRAGMA user_version", [], |r| r.get(0)))?;
-        if !(1..=6).contains(&version) {
+        if !(1..=7).contains(&version) {
             return Err("Версия базы не поддерживается. Обновите приложение.".into());
         }
         let vault = Self {
@@ -400,7 +401,7 @@ impl Vault {
             master,
             manifest,
         };
-        if version < 6 {
+        if version < 7 {
             let folder = root
                 .parent()
                 .ok_or("Неверный путь")?
@@ -429,7 +430,8 @@ impl Vault {
             if version < 5 {
                 crate::history::schema(&vault)?;
             }
-            sql(vault.conn.execute_batch("PRAGMA user_version=6;"))?;
+            crate::planner_trash::schema(&vault.conn)?;
+            sql(vault.conn.execute_batch("PRAGMA user_version=7;"))?;
             sql(tx.commit())?;
         }
         Ok(vault)
@@ -865,6 +867,7 @@ impl Vault {
         }
         drop(stmt);
         vault.validate_planner()?;
+        vault.validate_planner_trash()?;
         vault.validate_assignees()?;
         vault.validate_history()?;
         vault.validate_task_links()?;
@@ -977,7 +980,7 @@ mod tests {
             .conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
         assert_eq!(vault.get(&before.id).unwrap().revision, before.revision);
         assert_eq!(
             fs::read_dir(dir.path().join("migration-backups"))

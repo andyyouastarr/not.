@@ -2,6 +2,7 @@ import { Node as TiptapNode, type Editor } from "@tiptap/core";
 import { NodeSelection, TextSelection } from "@tiptap/pm/state";
 import { closeHistory } from "@tiptap/pm/history";
 import { useEffect } from "react";
+import { registerContextMenu } from "./contextMenu";
 
 export function validTimestampDate(date: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
@@ -104,7 +105,6 @@ export function insertTimestampAfter(editor: Editor, position: number) {
 export function useTimestampMenu(editor: Editor | null, enabled: boolean) {
   useEffect(() => {
     if (!editor || !enabled) return;
-    const previous = window.__notTaskMenu;
     let pending: {
       token: string;
       position: number;
@@ -117,7 +117,7 @@ export function useTimestampMenu(editor: Editor | null, enabled: boolean) {
       editor.view.dom.getClientRects().length > 0 &&
       !editor.view.dom.closest("[hidden]") &&
       editor.view.dom.closest("dialog") ===
-        Array.from(document.querySelectorAll("dialog[open]")).at(-1);
+        (Array.from(document.querySelectorAll("dialog[open]")).at(-1) ?? null);
     const key = (event: KeyboardEvent) => {
       keyboard =
         event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey);
@@ -133,9 +133,15 @@ export function useTimestampMenu(editor: Editor | null, enabled: boolean) {
         return;
       }
       const selection = editor.state.selection;
-      const at = keyboard
-        ? null
-        : editor.view.posAtCoords({ left: event.clientX, top: event.clientY });
+      const at =
+        keyboard ||
+        !Number.isFinite(event.clientX) ||
+        !Number.isFinite(event.clientY)
+          ? null
+          : editor.view.posAtCoords({
+              left: event.clientX,
+              top: event.clientY,
+            });
       const inSelection =
         at && at.pos >= selection.from && at.pos <= selection.to;
       let position =
@@ -162,15 +168,18 @@ export function useTimestampMenu(editor: Editor | null, enabled: boolean) {
         };
     };
     const bridge: NonNullable<Window["__notTaskMenu"]> = {
-      prepare: () =>
-        pending && visible() && pending.doc === editor.state.doc
-          ? {
-              token: pending.token,
-              label: "Timestamp разделитель",
-              enabled: true,
-              appendWithoutSelectAll: true,
-            }
-          : null,
+      prepare: () => {
+        const timestamp =
+          pending && visible() && pending.doc === editor.state.doc
+            ? {
+                token: pending.token,
+                label: "Timestamp разделитель",
+                enabled: true,
+                appendWithoutSelectAll: true,
+              }
+            : null;
+        return timestamp;
+      },
       run: (token) => {
         if (!pending || pending.token !== token || !bridge.prepare()) return;
         const position = pending.position;
@@ -180,12 +189,12 @@ export function useTimestampMenu(editor: Editor | null, enabled: boolean) {
     };
     document.addEventListener("keydown", key, true);
     document.addEventListener("contextmenu", context, true);
-    window.__notTaskMenu = bridge;
+    const unregister = registerContextMenu(bridge, 20);
     return () => {
       pending = null;
       document.removeEventListener("keydown", key, true);
       document.removeEventListener("contextmenu", context, true);
-      if (window.__notTaskMenu === bridge) window.__notTaskMenu = previous;
+      unregister();
     };
   }, [editor, enabled]);
 }

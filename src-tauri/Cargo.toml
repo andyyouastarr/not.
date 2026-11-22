@@ -1,6 +1,6 @@
 [package]
 name = "not-studio"
-version = "0.6.3"
+version = "0.6.4"
 description = "Private journal for quiet thoughts"
 authors = ["not. studio"]
 edition = "2021"

@@ -27,14 +27,19 @@ pub fn install(window: &tauri::WebviewWindow) -> tauri::Result<()> {
                                 else {
                                     return Ok(());
                                 };
+                                let mut commands = vec![&value];
+                                if let Some(extra) = value["additional"].as_array() {
+                                    commands.extend(extra.iter().take(8));
+                                }
+                                for (offset, value) in commands.into_iter().enumerate() {
                                 let Some(label) = value["label"].as_str() else {
-                                    return Ok(());
+                                    continue;
                                 };
                                 let Some(id) = value["token"]
                                     .as_str()
                                     .filter(|s| uuid::Uuid::parse_str(s).is_ok())
                                 else {
-                                    return Ok(());
+                                    continue;
                                 };
                                 let items = args.MenuItems()?;
                                 let mut count = 0;
@@ -47,7 +52,7 @@ pub fn install(window: &tauri::WebviewWindow) -> tauri::Result<()> {
                                     if CoTaskMemPWSTR::from(name).to_string() != "selectAll" {
                                         continue;
                                     }
-                                    insertion = Some(index + 1);
+                                    insertion = Some(index + 1 + offset as u32);
                                     break;
                                 }
                                 // Image/atom menus may omit selectAll. Keep their built-ins
@@ -87,6 +92,7 @@ pub fn install(window: &tauri::WebviewWindow) -> tauri::Result<()> {
                                         let probe = serde_json::json!({"names":names,"insertedIndex":index,"label":label});
                                         target.ExecuteScript(&HSTRING::from(format!("window.__notNativeMenuProbe={probe}")), &ExecuteScriptCompletedHandler::create(Box::new(|_,_| Ok(()))))?;
                                     }
+                                }
                                 }
                                 Ok(())
                             };
