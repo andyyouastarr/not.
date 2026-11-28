@@ -1,4 +1,8 @@
 export const ru = {
+  pdfDownload: "Скачать PDF",
+  pdfSaved: "PDF сохранён",
+  pdfCancelled: "Экспорт отменён или превышено время ожидания. Попробуйте ещё раз.",
+  pdfNativeOnly: "Экспорт PDF доступен в установленном приложении Windows.",
   theme: "Тема",
   themeDetail: "Оформление приложения и экрана входа",
   themeDark: "Тёмная",

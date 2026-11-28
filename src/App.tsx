@@ -42,6 +42,7 @@ import Planner, { type PlannerHandle } from "./planner/Planner";
 import PlannerSettings from "./planner/PlannerSettings";
 import { useLinkedTasks } from "./useLinkedTasks";
 import type { TaskLink } from "./taskLinks";
+import { pdfDate } from "./PdfExport";
 
 function IconButton({
   title,
@@ -1060,6 +1061,30 @@ export default function App() {
                         </div>
                       )}
                       <JournalEditor
+                        pdf={{
+                          name: () =>
+                            entryRef.current?.title ||
+                            entryRef.current?.date ||
+                            "Дневник",
+                          capture: async () => {
+                            const ticket = epoch.current;
+                            const id = entry.id;
+                            while (imports.current.size)
+                              await Promise.all([...imports.current]);
+                            if (
+                              ticket !== epoch.current ||
+                              entryRef.current?.id !== id
+                            )
+                              throw Error("Запись закрыта");
+                            const snapshot = structuredClone(entryRef.current);
+                            return {
+                              kind: "diary",
+                              title: snapshot.title,
+                              metadata: [pdfDate(snapshot.date)],
+                              document: snapshot.document,
+                            };
+                          },
+                        }}
                         timestampMenu
                         diaryLinks={linked.actions}
                         onReady={linked.ready}

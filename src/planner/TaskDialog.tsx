@@ -14,6 +14,7 @@ import { api, errorText } from "../api";
 import type { Board, Draft } from "./types";
 import type { TaskLink } from "../taskLinks";
 import { AssigneeDialog, useAssignees } from "./AssigneeSettings";
+import { pdfDate, type PdfSource } from "../PdfExport";
 
 // Metadata edits must not reconfigure the rich-text editor on every keystroke.
 const TaskDescriptionEditor = memo(JournalEditor);
@@ -57,6 +58,28 @@ export default forwardRef<
   const [saving, setSaving] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const imports = useRef(new Set<Promise<void>>());
+  const assigneesRef = useRef(assignees);
+  assigneesRef.current = assignees;
+  const [pdfSource] = useState<PdfSource>(() => ({
+    name: () => current.current.title || "Новая задача",
+    capture: async () => {
+      while (imports.current.size) await Promise.all([...imports.current]);
+      if (!alive.current) throw Error("Окно задачи закрыто");
+      const value = structuredClone(current.current);
+      const assignee = assigneesRef.current.find(
+        (item) => item.id === value.assigneeId,
+      );
+      return {
+        kind: "task",
+        title: value.title,
+        metadata: [
+          assignee ? `Исполнитель: ${assignee.name}` : "",
+          value.deadline ? `Дедлайн: ${pdfDate(value.deadline)}` : "",
+        ].filter(Boolean),
+        document: value.document,
+      };
+    },
+  }));
   const chain = useRef<Promise<unknown>>(Promise.resolve());
   const alive = useRef(true);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -398,6 +421,7 @@ export default forwardRef<
         </div>
         <div className="task-description">
           <TaskDescriptionEditor
+            pdf={pdfSource}
             placeholder={ru.taskBodyPlaceholder}
             timestampMenu={tab === "edit" && !busy && !assigneeSettings}
             document={draft.document}

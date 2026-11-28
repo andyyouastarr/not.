@@ -2217,3 +2217,8 @@ kbd {
   gap: 14px;
   z-index: 30;
 }
+.pdf-export-control { margin-left: auto; position: relative; }
+.pdf-export-status { position: absolute; right: 0; top: 100%; z-index: 30; width: max-content; max-width: 280px; padding: 8px 12px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font-size: 12px; border-radius: 8px; }
+.pdf-export-spinner { animation: pdf-spin 1s linear infinite; }
+@keyframes pdf-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pdf-export-spinner { animation: none; } }

@@ -42,6 +42,9 @@ export type SaveEntry = Pick<
   "id" | "date" | "title" | "document" | "revision"
 >;
 export interface Commands {
+  beginPdfExport: [{ name: string }, string | null];
+  printPdfExport: [{ operation: string }, boolean];
+  cancelPdfExport: [{ operation: string }, boolean];
   taskHistory: [
     { query: import("./planner/history").HistoryQuery },
     import("./planner/history").HistoryPage,

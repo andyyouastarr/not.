@@ -8,6 +8,7 @@ mod history;
 mod idle;
 mod keyboard;
 mod links;
+mod pdf;
 mod planner;
 mod planner_trash;
 mod session;
@@ -31,11 +32,21 @@ struct State {
     activity: Instant,
     idle_minutes: u64,
     locking: Option<Instant>,
+    pdf: Option<pdf::Operation>,
 }
 type Shared = Arc<Mutex<State>>;
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 enum Request {
+    BeginPdfExport {
+        name: String,
+    },
+    PrintPdfExport {
+        operation: String,
+    },
+    CancelPdfExport {
+        operation: String,
+    },
     Appearance,
     SetAppearance {
         value: appearance::Preferences,
@@ -145,6 +156,18 @@ async fn dispatch(
         .map_err(|_| "Операция прервана")?
 }
 fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Value> {
+    match &request {
+        Request::BeginPdfExport { name } => return Ok(json!(pdf::begin(&app, &state, name)?)),
+        Request::PrintPdfExport { operation } => {
+            pdf::print(&app, &state, operation)?;
+            return Ok(json!(true));
+        }
+        Request::CancelPdfExport { operation } => {
+            pdf::cancel(&state, operation)?;
+            return Ok(json!(true));
+        }
+        _ => {}
+    }
     if matches!(
         &request,
         Request::Appearance | Request::SetAppearance { .. } | Request::AppearanceReady
@@ -279,6 +302,7 @@ fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Valu
             let result = vault::Vault::create(&s.root, &password);
             password.zeroize();
             let (v, key) = result?;
+            s.pdf = None;
             s.vault = Some(v);
             s.idle_minutes = idle::DEFAULT_MINUTES;
             s.activity = Instant::now();
@@ -294,12 +318,14 @@ fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Valu
             let v = result?;
             v.purge_planner_trash(chrono::Utc::now().timestamp())?;
             s.idle_minutes = idle::minutes(&v.settings()?);
+            s.pdf = None;
             s.vault = Some(v);
             s.activity = Instant::now();
             s.locking = None;
             return Ok(json!(true));
         }
         Request::Lock => {
+            s.pdf = None;
             s.vault = None;
             s.locking = None;
             let _ = app.emit("vault-locked", ());
@@ -310,6 +336,7 @@ fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Valu
             return Ok(json!(true));
         }
         Request::Close => {
+            s.pdf = None;
             s.vault = None;
             drop(s);
             if let Some(w) = app.get_webview_window("main") {
@@ -331,6 +358,7 @@ fn handle(request: Request, app: tauri::AppHandle, state: Shared) -> Result<Valu
             credential.zeroize();
             let v = result?;
             drop(v);
+            s.pdf = None;
             s.vault = None;
             s.locking = None;
             // The connection must close before directory replacement on Windows.
@@ -540,6 +568,7 @@ pub fn run() {
                 activity: Instant::now(),
                 idle_minutes: idle::DEFAULT_MINUTES,
                 locking: None,
+                pdf: None,
             }));
             app.manage(shared.clone());
             #[cfg(debug_assertions)]
@@ -568,6 +597,7 @@ pub fn run() {
                 if s.locking
                     .is_some_and(|t| t.elapsed() > Duration::from_secs(3))
                 {
+                    s.pdf = None;
                     s.vault = None;
                     s.locking = None;
                     let _ = handle.emit("vault-locked", ());
@@ -576,6 +606,7 @@ pub fn run() {
                 if s.locking.is_none()
                     && idle::due(s.idle_minutes, s.activity.elapsed(), session::locked())
                 {
+                    s.pdf = None;
                     s.locking = Some(Instant::now());
                     let _ = handle.emit("vault-lock-request", ());
                 }

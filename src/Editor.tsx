@@ -43,6 +43,7 @@ import { importImage, clipboardFiles } from "./pasteImage";
 import { taskLinkExtension, type DiaryLinkActions } from "./taskLinks";
 import { useDiaryTaskMenu, UnlinkConfirmation } from "./DiaryTaskMenu";
 import { TimestampDivider, useTimestampMenu } from "./TimestampDivider";
+import PdfExport, { type PdfSource } from "./PdfExport";
 
 function attachmentNode(name: "image" | "attachment") {
   return Node.create({
@@ -133,6 +134,7 @@ function moveBlock(editor: EditorType, direction: number) {
   editor.view.focus();
 }
 type Props = {
+  pdf?: PdfSource;
   placeholder?: string;
   timestampMenu?: boolean;
   diaryLinks?: DiaryLinkActions;
@@ -144,6 +146,7 @@ type Props = {
   onImport: (task: Promise<void>) => void;
 };
 export default function JournalEditor({
+  pdf,
   placeholder = ru.bodyPlaceholder,
   document,
   editable,
@@ -520,127 +523,134 @@ export default function JournalEditor({
           {ru.imagePasting}
         </div>
       )}
-      {editable && (
+      {(editable || pdf) && (
         <div
           className="editor-tools"
           role="toolbar"
           aria-label="Инструменты записи"
         >
-          <div className="tool-group">
-            <button
-              className={menu ? "active" : ""}
-              aria-expanded={menu}
-              title={ru.blockMenu}
-              aria-label={ru.blockMenu}
-              onClick={() => {
-                setSlash(false);
-                setMenu(!menu);
-              }}
-            >
-              <Plus size={17} />
-              <ChevronDown size={11} />
-            </button>
-            <button
-              draggable
-              title={ru.drag}
-              aria-label={ru.drag}
-              onDragStart={(e) => {
-                const b = blockInfo(editor);
-                if (b)
-                  e.dataTransfer.setData(
-                    "application/x-not-block",
-                    String(b.pos),
-                  );
-              }}
-            >
-              <GripVertical size={17} />
-            </button>
-            <button
-              title={ru.moveUp}
-              aria-label={ru.moveUp}
-              onClick={() => moveBlock(editor, -1)}
-            >
-              <ArrowUp size={16} />
-            </button>
-            <button
-              title={ru.moveDown}
-              aria-label={ru.moveDown}
-              onClick={() => moveBlock(editor, 1)}
-            >
-              <ArrowDown size={16} />
-            </button>
-          </div>
-          <span className="tool-separator" />
-          <div className="tool-group">
-            <button
-              className={editor.isActive("taskList") ? "active" : ""}
-              title={ru.checklist}
-              aria-label={ru.checklist}
-              aria-pressed={editor.isActive("taskList")}
-              onClick={() =>
-                run((e) => e.chain().focus().toggleTaskList().run())
-              }
-            >
-              <ListChecks size={17} />
-            </button>
-            <button
-              className={editor.isActive("bold") ? "active" : ""}
-              title={ru.bold}
-              aria-label={ru.bold}
-              onClick={() => editor.chain().focus().toggleBold().run()}
-            >
-              <Bold size={16} />
-            </button>
-            <button
-              className={editor.isActive("italic") ? "active" : ""}
-              title={ru.italic}
-              aria-label={ru.italic}
-              onClick={() => editor.chain().focus().toggleItalic().run()}
-            >
-              <Italic size={16} />
-            </button>
-            <button
-              className={editor.isActive("strike") ? "active" : ""}
-              title={ru.strike}
-              aria-label={ru.strike}
-              onClick={() => editor.chain().focus().toggleStrike().run()}
-            >
-              <Strikethrough size={16} />
-            </button>
-            <HighlightTools editor={editor} />
-            <button
-              title={ru.link}
-              aria-label={ru.link}
-              onClick={() => setLink(editor.getAttributes("link").href || "")}
-            >
-              <Link size={16} />
-            </button>
-          </div>
-          <span className="tool-separator" />
-          <div className="tool-group">
-            <button
-              title={ru.addFile}
-              aria-label={ru.addFile}
-              onClick={() => void addFile()}
-            >
-              <ImagePlus size={17} />
-            </button>
-            <button
-              title={ru.undo}
-              aria-label={ru.undo}
-              onClick={() => editor.chain().focus().undo().run()}
-            >
-              <Undo2 size={16} />
-            </button>
-            <button
-              title={ru.redo}
-              aria-label={ru.redo}
-              onClick={() => editor.chain().focus().redo().run()}
-            >
-              <Redo2 size={16} />
-            </button>
-          </div>
-          {menu && (
+          {editable && (
+            <>
+              <div className="tool-group">
+                <button
+                  className={menu ? "active" : ""}
+                  aria-expanded={menu}
+                  title={ru.blockMenu}
+                  aria-label={ru.blockMenu}
+                  onClick={() => {
+                    setSlash(false);
+                    setMenu(!menu);
+                  }}
+                >
+                  <Plus size={17} />
+                  <ChevronDown size={11} />
+                </button>
+                <button
+                  draggable
+                  title={ru.drag}
+                  aria-label={ru.drag}
+                  onDragStart={(e) => {
+                    const b = blockInfo(editor);
+                    if (b)
+                      e.dataTransfer.setData(
+                        "application/x-not-block",
+                        String(b.pos),
+                      );
+                  }}
+                >
+                  <GripVertical size={17} />
+                </button>
+                <button
+                  title={ru.moveUp}
+                  aria-label={ru.moveUp}
+                  onClick={() => moveBlock(editor, -1)}
+                >
+                  <ArrowUp size={16} />
+                </button>
+                <button
+                  title={ru.moveDown}
+                  aria-label={ru.moveDown}
+                  onClick={() => moveBlock(editor, 1)}
+                >
+                  <ArrowDown size={16} />
+                </button>
+              </div>
+              <span className="tool-separator" />
+              <div className="tool-group">
+                <button
+                  className={editor.isActive("taskList") ? "active" : ""}
+                  title={ru.checklist}
+                  aria-label={ru.checklist}
+                  aria-pressed={editor.isActive("taskList")}
+                  onClick={() =>
+                    run((e) => e.chain().focus().toggleTaskList().run())
+                  }
+                >
+                  <ListChecks size={17} />
+                </button>
+                <button
+                  className={editor.isActive("bold") ? "active" : ""}
+                  title={ru.bold}
+                  aria-label={ru.bold}
+                  onClick={() => editor.chain().focus().toggleBold().run()}
+                >
+                  <Bold size={16} />
+                </button>
+                <button
+                  className={editor.isActive("italic") ? "active" : ""}
+                  title={ru.italic}
+                  aria-label={ru.italic}
+                  onClick={() => editor.chain().focus().toggleItalic().run()}
+                >
+                  <Italic size={16} />
+                </button>
+                <button
+                  className={editor.isActive("strike") ? "active" : ""}
+                  title={ru.strike}
+                  aria-label={ru.strike}
+                  onClick={() => editor.chain().focus().toggleStrike().run()}
+                >
+                  <Strikethrough size={16} />
+                </button>
+                <HighlightTools editor={editor} />
+                <button
+                  title={ru.link}
+                  aria-label={ru.link}
+                  onClick={() =>
+                    setLink(editor.getAttributes("link").href || "")
+                  }
+                >
+                  <Link size={16} />
+                </button>
+              </div>
+              <span className="tool-separator" />
+              <div className="tool-group">
+                <button
+                  title={ru.addFile}
+                  aria-label={ru.addFile}
+                  onClick={() => void addFile()}
+                >
+                  <ImagePlus size={17} />
+                </button>
+                <button
+                  title={ru.undo}
+                  aria-label={ru.undo}
+                  onClick={() => editor.chain().focus().undo().run()}
+                >
+                  <Undo2 size={16} />
+                </button>
+                <button
+                  title={ru.redo}
+                  aria-label={ru.redo}
+                  onClick={() => editor.chain().focus().redo().run()}
+                >
+                  <Redo2 size={16} />
+                </button>
+              </div>
+            </>
+          )}
+          {pdf && <PdfExport source={pdf} disabled={pasting > 0} />}
+          {editable && menu && (
             <div
               className="block-menu glass"
               role="menu"

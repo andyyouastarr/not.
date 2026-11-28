@@ -1,0 +1,262 @@
+#not-pdf-document {
+  position: fixed;
+  left: -100000px;
+  top: 0;
+  width: 174mm;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  color: #111113;
+  background: #fff;
+  color-scheme: light;
+  font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+  font-size: 11pt;
+  line-height: 1.7;
+  font-weight: 400;
+  text-align: left;
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+#not-pdf-document * {
+  box-sizing: border-box;
+}
+#not-pdf-document .pdf-body {
+  display: flow-root;
+}
+#not-pdf-document p {
+  margin: 0 0 12pt;
+  orphans: 2;
+  widows: 2;
+}
+#not-pdf-document h1,
+#not-pdf-document h2,
+#not-pdf-document h3,
+#not-pdf-document h4,
+#not-pdf-document h5,
+#not-pdf-document h6 {
+  margin: 18pt 0 8pt;
+  line-height: 1.35;
+  font-weight: 600;
+  break-after: avoid;
+}
+#not-pdf-document h1 {
+  font-size: 20pt;
+}
+#not-pdf-document h2 {
+  font-size: 16pt;
+}
+#not-pdf-document h3 {
+  font-size: 13pt;
+}
+#not-pdf-document header {
+  margin-bottom: 20pt;
+  break-after: avoid;
+}
+#not-pdf-document header h1 {
+  margin-top: 0;
+}
+#not-pdf-document header p {
+  font-size: 9pt;
+  color: #50515b;
+  margin: 3pt 0;
+}
+#not-pdf-document strong {
+  font-weight: 600;
+}
+#not-pdf-document a {
+  color: #69528f;
+  text-decoration: underline;
+}
+#not-pdf-document mark {
+  color: inherit;
+  background: #e4daf2;
+}
+#not-pdf-document mark[data-highlight="yellow"] {
+  background: #f7e9a9;
+}
+#not-pdf-document mark[data-highlight="green"] {
+  background: #cee9d8;
+}
+#not-pdf-document mark[data-highlight="pink"] {
+  background: #f0d5e1;
+}
+#not-pdf-document ul,
+#not-pdf-document ol {
+  margin: 9pt 0;
+  padding-left: 20pt;
+}
+#not-pdf-document li p {
+  margin-bottom: 4pt;
+}
+#not-pdf-document .pdf-checklist {
+  list-style: none;
+  padding-left: 20pt;
+}
+#not-pdf-document .pdf-checklist > li {
+  position: relative;
+}
+#not-pdf-document .pdf-check {
+  position: absolute;
+  left: -18pt;
+}
+#not-pdf-document [data-checked="true"] > p {
+  text-decoration: line-through;
+  color: #50515b;
+}
+#not-pdf-document blockquote {
+  margin: 14pt 0;
+  padding-left: 14pt;
+  border-left: 2px solid #b5a5cc;
+  font-style: italic;
+}
+#not-pdf-document pre {
+  clear: both;
+  white-space: pre-wrap;
+  padding: 10pt;
+  border: 1px solid #d8d8df;
+  background: #f5f5f8;
+  font-size: 9pt;
+}
+#not-pdf-document code {
+  font-family: Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+#not-pdf-document table {
+  clear: both;
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 14pt 0;
+}
+#not-pdf-document th,
+#not-pdf-document td {
+  border: 1px solid #d3d3da;
+  padding: 5pt 7pt;
+  vertical-align: top;
+}
+#not-pdf-document th {
+  background: #f1edf6;
+  font-weight: 600;
+  text-align: left;
+}
+#not-pdf-document td p,
+#not-pdf-document th p {
+  margin: 0;
+}
+#not-pdf-document thead {
+  display: table-header-group;
+}
+#not-pdf-document figure {
+  clear: both;
+  margin: 0 0 12pt;
+  max-width: 100%;
+  break-inside: avoid;
+}
+#not-pdf-document figure[data-side="left"] {
+  float: left;
+  margin-right: 18px;
+}
+#not-pdf-document figure[data-side="right"] {
+  float: right;
+  margin-left: 18px;
+}
+#not-pdf-document figure[data-standalone="true"] {
+  float: none;
+  margin-right: 0;
+}
+#not-pdf-document figure[data-standalone="true"][data-side="right"] {
+  margin-left: auto;
+}
+#not-pdf-document figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+#not-pdf-document figcaption {
+  margin-top: 3pt;
+  color: #686975;
+  font-size: 8pt;
+  line-height: 1.4;
+}
+#not-pdf-document .pdf-float-group {
+  display: flow-root;
+  clear: both;
+}
+#not-pdf-document .pdf-keep {
+  break-inside: avoid;
+}
+#not-pdf-document .pdf-file {
+  clear: both;
+  padding: 8pt 10pt;
+  border: 1px solid #d8d8df;
+  border-radius: 5pt;
+  font-size: 9pt;
+}
+#not-pdf-document hr {
+  clear: both;
+  border: 0;
+  border-top: 1px solid #d8d8df;
+  margin: 18pt 0;
+}
+#not-pdf-document .pdf-timestamp {
+  clear: both;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: #686975;
+  margin: 14pt 0;
+  break-after: avoid;
+}
+#not-pdf-document .pdf-timestamp span {
+  flex: 1;
+  border-top: 1px solid #d8d8df;
+}
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 18mm;
+    @bottom-center {
+      content: counter(page);
+      font-family: "Segoe UI", sans-serif;
+      font-size: 8pt;
+      color: #686975;
+    }
+  }
+  html[data-pdf-ancestor],
+  body[data-pdf-ancestor],
+  [data-pdf-ancestor] {
+    position: static !important;
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    overflow: visible !important;
+    transform: none !important;
+    background: #fff !important;
+    color-scheme: light !important;
+    color: #111113 !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    filter: none !important;
+  }
+  [data-pdf-ancestor] > :not([data-pdf-ancestor]):not(#not-pdf-document) {
+    display: none !important;
+  }
+  [data-pdf-ancestor]::backdrop {
+    display: none !important;
+  }
+  #not-pdf-document {
+    position: static;
+    width: 174mm;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
